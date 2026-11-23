@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BMAS NVL72 Command Plane — Interactive Front-End & Telemetry Architecture</title>
+  <!-- Load Tailwind CSS for responsive layout utilities -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Load Inter & JetBrains Mono fonts for crisp UI and terminal typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ==========================================================================
+       BMAS NVL72 Command Plane — Cyber HPC Command-Center Theme & Animations
+       ========================================================================== */
+    :root {
+      --bg-obsidian: #060a12;
+      --bg-panel: #0d1424;
+      --bg-panel-elevated: #111b30;
+      --border-subtle: rgba(0, 229, 255, 0.16);
+      --cyan: #00e5ff;
+      --nvidia-green: #76b900;
+      --gold: #f5b700;
+      --crimson: #ff3366;
+      --text-primary: #e8f1ff;
+      --text-muted: #8aa0c2;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-obsidian);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    .font-mono-code {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    /* Subtle Tron-inspired Cyber Grid Background */
+    .cyber-grid-bg {
+      background-color: var(--bg-obsidian);
+      background-image:
+        radial-gradient(circle at 18% 12%, rgba(0, 229, 255, 0.08), transparent 40%),
+        radial-gradient(circle at 82% 85%, rgba(118, 185, 0, 0.07), transparent 42%),
+        linear-gradient(rgba(0, 229, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.04) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+    }
+
+    /* Elevated Slate Panels */
+    .hpc-panel {
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.94) 0%, rgba(10, 16, 29, 0.96) 100%);
+      border: 1px solid rgba(0, 229, 255, 0.18);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    /* Interactive Step Pill Buttons */
+    .step-pill {
+      transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+      border: 1px solid rgba(138, 160, 194, 0.22);
+      background: rgba(13, 20, 36, 0.85);
+      color: #b4c6e7;
+    }
+
+    .step-pill:hover {
+      border-color: rgba(0, 229, 255, 0.55);
+      color: #ffffff;
+      transform: translateY(-1px);
+    }
+
+    .step-pill.active-cyan {
+      background: rgba(0, 229, 255, 0.14);
+      border-color: var(--cyan);
+      color: #ffffff;
+      box-shadow: 0 0 16px rgba(0, 229, 255, 0.32), inset 0 0 8px rgba(0, 229, 255, 0.15);
+    }
+
+    .step-pill.active-green {
+      background: rgba(118, 185, 0, 0.16);
+      border-color: var(--nvidia-green);
+      color: #ffffff;
+      box-shadow: 0 0 16px rgba(118, 185, 0, 0.35), inset 0 0 8px rgba(118, 185, 0, 0.18);
+    }
+
+    .step-pill.active-gold {
+      background: rgba(245, 183, 0, 0.16);
+      border-color: var(--gold);
+      color: #ffffff;
+      box-shadow: 0 0 16px rgba(245, 183, 0, 0.35), inset 0 0 8px rgba(245, 183, 0, 0.18);
+    }
+
+    .step-pill.active-crimson {
+      background: rgba(255, 51, 102, 0.16);
+      border-color: var(--crimson);
+      color: #ffffff;
+      box-shadow: 0 0 16px rgba(255, 51, 102, 0.35), inset 0 0 8px rgba(255, 51, 102, 0.18);
+    }
+
+    /* SVG Node & Path State Transitions */
+    .arch-node {
+      transition: opacity 0.35s ease, filter 0.35s ease;
+    }
+
+    .arch-node.dimmed {
+      opacity: 0.24;
+    }
+
+    .arch-node.highlighted {
+      opacity: 1;
+    }
+
+    .flow-path-base {
+      fill: none;
+      stroke-width: 2;
+      transition: opacity 0.35s ease, stroke-width 0.35s ease;
+    }
+
+    .flow-path-dash {
+      fill: none;
+      stroke-width: 2.8;
+      stroke-dasharray: 8 10;
+      stroke-linecap: round;
+      transition: opacity 0.35s ease;
+    }
+
+    .flow-active {
+      opacity: 1 !important;
+      animation: dashFlow 1.15s linear infinite;
+    }
+
+    .flow-dimmed {
+      opacity: 0.12 !important;
+      animation: none;
+    }
+
+    .packet-group {
+      transition: opacity 0.3s ease;
+    }
+
+    .packet-group.hidden-packet {
+      opacity: 0;
+    }
+
+    @keyframes dashFlow {
+      from {
+        stroke-dashoffset: 36;
+      }
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% {
+        opacity: 0.72;
+      }
+      50% {
+        opacity: 1;
+      }
+    }
+
+    .pulse-indicator {
+      animation: pulseGlow 1.6s ease-in-out infinite;
+    }
+
+    /* Animated Voice Waveform Bars */
+    .voice-bar {
+      transform-origin: center bottom;
+      transition: fill 0.3s ease;
+    }
+
+    .voice-active .voice-bar-1 { animation: waveBounce 0.65s ease-in-out infinite alternate; }
+    .voice-active .voice-bar-2 { animation: waveBounce 0.52s ease-in-out 0.1s infinite alternate; }
+    .voice-active .voice-bar-3 { animation: waveBounce 0.78s ease-in-out 0.2s infinite alternate; }
+    .voice-active .voice-bar-4 { animation: waveBounce 0.48s ease-in-out 0.05s infinite alternate; }
+    .voice-active .voice-bar-5 { animation: waveBounce 0.70s ease-in-out 0.15s infinite alternate; }
+    .voice-active .voice-bar-6 { animation: waveBounce 0.58s ease-in-out 0.25s infinite alternate; }
+
+    @keyframes waveBounce {
+      0% { transform: scaleY(0.28); }
+      100% { transform: scaleY(1.0); }
+    }
+
+    /* Bottom Step Summary Cards */
+    .legend-card {
+      transition: all 0.25s ease;
+      background: rgba(13, 20, 36, 0.85);
+      border: 1px solid rgba(138, 160, 194, 0.16);
+      cursor: pointer;
+    }
+
+    .legend-card:hover {
+      border-color: rgba(0, 229, 255, 0.45);
+      transform: translateY(-1px);
+    }
+
+    .legend-card.active-card {
+      background: rgba(17, 29, 52, 0.98);
+      border-color: var(--active-accent, var(--cyan));
+      box-shadow: 0 0 18px rgba(0, 229, 255, 0.2);
+    }
+
+    /* Terminal Styling */
+    .terminal-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+    .terminal-scroll::-webkit-scrollbar-track {
+      background: #070b14;
+    }
+    .terminal-scroll::-webkit-scrollbar-thumb {
+      background: #1e2d4d;
+      border-radius: 3px;
+    }
+
+    .log-entry {
+      animation: fadeSlideIn 0.25s ease-out;
+    }
+
+    @keyframes fadeSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    /* ==========================================================================
+       PDF / Landscape Print Protection Rules
+       ========================================================================== */
+    @page {
+      size: landscape;
+      margin: 8mm;
+    }
+
+    @media print {
+      html, body {
+        background-color: #060a12 !important;
+        color: #e8f1ff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      .cyber-grid-bg {
+        background-color: #060a12 !important;
+      }
+
+      .print-keep,
+      .hpc-panel,
+      .svg-stage-card,
+      .legend-card,
+      .terminal-card,
+      footer {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      svg {
+        max-width: 100% !important;
+        height: auto !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      .no-print-shadow {
+        box-shadow: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="cyber-grid-bg antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+  <!-- Main 1440px Landscape Container -->
+  <div class="max-w-[1440px] mx-auto px-3 sm:px-5 py-3 flex flex-col gap-3 min-h-screen justify-between">
+
+    <!-- ======================================================================
+         TOP HEADER BAR: Branding, Step Controls & Live Step Caption Banner
+         ====================================================================== -->
+    <header class="hpc-panel rounded-xl px-4 py-3 print-keep">
+      <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+        <!-- Branding Badge -->
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500/25 to-emerald-500/20 border border-cyan-400/50 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(0,229,255,0.25)]">
+            <!-- Inline SVG Command Plane Hex Icon -->
+            <svg class="w-6 h-6 text-cyan-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <polygon points="12 2 21 7 21 17 12 22 3 17 3 7 12 2"></polygon>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs sm:text-sm font-extrabold tracking-wider text-white uppercase">
+                BMAS NVL72 COMMAND PLANE
+              </span>
+              <span class="text-cyan-400/60 font-bold">|</span>
+              <span class="text-xs font-mono-code font-semibold tracking-widest text-cyan-300 uppercase">
+                ARCHITECTURE BLUEPRINT
+              </span>
+              <span class="px-2 py-0.5 text-[10px] font-mono-code font-bold rounded-full bg-emerald-500/15 text-[#76b900] border border-[#76b900]/40">
+                v1.0.0-rc1
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">
+              Interactive Front-End, Native Exporter Telemetry &amp; Slurm 24.11+ Orchestration Flow
+            </p>
+          </div>
+        </div>
+
+        <!-- Interactive Step Controls -->
+        <div class="flex flex-wrap items-center gap-1.5" role="toolbar" aria-label="Architecture Step Controls">
+          <button id="btnAutoPlay" type="button"
+            class="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 bg-cyan-500/20 border border-cyan-400/60 text-cyan-200 hover:bg-cyan-500/30 transition cursor-pointer">
+            <span id="autoPlayIcon" class="inline-block w-2 h-2 rounded-full bg-[#76b900] pulse-indicator"></span>
+            <span id="autoPlayLabel">Pause</span>
+          </button>
+
+          <div class="h-5 w-px bg-slate-700/80 mx-1 hidden sm:block"></div>
+
+          <button type="button" data-step="1" class="step-pill px-2.5 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer">
+            Step 1: L0 Scrapers
+          </button>
+          <button type="button" data-step="2" class="step-pill px-2.5 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer">
+            Step 2: L1 Slurm 24.11+
+          </button>
+          <button type="button" data-step="3" class="step-pill px-2.5 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer">
+            Step 3: L2 mTLS &amp; Galera
+          </button>
+          <button type="button" data-step="4" class="step-pill px-2.5 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer">
+            Step 4: NVL72 Tray Render
+          </button>
+          <button type="button" data-step="5" class="step-pill px-2.5 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer">
+            Step 5: L3 AI Auto-Follow
+          </button>
+          <button type="button" data-step="all" class="step-pill px-2.5 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer">
+            All Active
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Dynamic Step Caption Banner -->
+      <div id="stepCaptionBanner"
+        class="mt-2.5 px-3.5 py-2 rounded-lg bg-[#080e1c] border border-cyan-500/30 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <span id="captionBadge"
+            class="px-2 py-0.5 rounded text-[11px] font-mono-code font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shrink-0">
+            STEP 1 / 5
+          </span>
+          <p id="captionText" class="text-xs sm:text-[13px] text-slate-200 font-medium leading-snug">
+            Native Prometheus Scrapers &amp; DCGM Exporters directly poll all 18 GB200 NVL72 compute trays—zero Grafana overhead.
+          </p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-[10px] font-mono-code uppercase tracking-wider text-slate-400">Cycle:</span>
+          <div class="w-24 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+            <div id="cycleProgressBar" class="h-full bg-cyan-400 rounded-full transition-all duration-100" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ======================================================================
+         MAIN ANIMATED SVG DIAGRAM (1440px Landscape Architecture Canvas)
+         ====================================================================== -->
+    <main class="hpc-panel svg-stage-card rounded-xl p-2 sm:p-3 print-keep relative overflow-hidden">
+      <svg id="archSvg" viewBox="0 0 1380 540" class="w-full h-auto block select-none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BMAS NVL72 Command Plane Interactive Architecture Diagram">
+        <defs>
+          <!-- Neon Glow Filters -->
+          <filter id="glowCyan" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="glowGreen" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="glowGold" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="glowCrimson" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          <!-- Gradients -->
+          <linearGradient id="panelGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#111c33" />
+            <stop offset="100%" stop-color="#0a1120" />
+          </linearGradient>
+          <linearGradient id="coreGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0f1a31" />
+            <stop offset="100%" stop-color="#080e1d" />
+          </linearGradient>
+          <linearGradient id="rackGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#0c1526" />
+            <stop offset="50%" stop-color="#122038" />
+            <stop offset="100%" stop-color="#0c1526" />
+          </linearGradient>
+
+          <!-- Subtle Internal Grid Pattern -->
+          <pattern id="svgSubGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+            <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(0,229,255,0.045)" stroke-width="1" />
+          </pattern>
+
+          <!-- Arrowhead Markers -->
+          <marker id="arrowCyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#00e5ff" />
+          </marker>
+          <marker id="arrowGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#76b900" />
+          </marker>
+          <marker id="arrowGold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#f5b700" />
+          </marker>
+          <marker id="arrowCrimson" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#ff3366" />
+          </marker>
+        </defs>
+
+        <!-- Background Canvas with Subtle Grid -->
+        <rect x="0" y="0" width="1380" height="540" rx="10" fill="#070c17" />
+        <rect x="0" y="0" width="1380" height="540" rx="10" fill="url(#svgSubGrid)" />
+
+        <!-- Zone Header Labels -->
+        <g font-family="JetBrains Mono, monospace" font-size="11" font-weight="700" letter-spacing="1.4">
+          <text x="26" y="24" fill="#76b900">ZONE 1 // INFRASTRUCTURE &amp; DATA SOURCES</text>
+          <line x1="26" y1="31" x2="352" y2="31" stroke="rgba(118,185,0,0.35)" stroke-width="1" />
+
+          <text x="466" y="24" fill="#00e5ff">ZONE 2 // BMAS COMMAND PLANE CORE (L0–L3 STACK)</text>
+          <line x1="466" y1="31" x2="884" y2="31" stroke="rgba(0,229,255,0.35)" stroke-width="1" />
+
+          <text x="996" y="24" fill="#f5b700">ZONE 3 // LIVE FRONT-END COMMAND PLANE</text>
+          <line x1="996" y1="31" x2="1354" y2="31" stroke="rgba(245,183,0,0.35)" stroke-width="1" />
+        </g>
+
+        <!-- ==================================================================
+             ANIMATED SVG DATA PATHS (Behind Nodes & Packets)
+             ================================================================== -->
+        <g id="dataPathsLayer">
+          <!-- Step 1A: NVL72 Rack -> Prometheus Scrapers -->
+          <path id="path-s1-rack-prom" class="flow-path-base" d="M 164 196 C 188 196, 188 265, 206 265" stroke="rgba(118,185,0,0.28)" />
+          <path id="dash-s1-rack-prom" class="flow-path-dash" data-steps="1,all" d="M 164 196 C 188 196, 188 265, 206 265" stroke="#76b900" marker-end="url(#arrowGreen)" />
+
+          <!-- Step 1B: Prometheus Scrapers -> L0 Telemetry -->
+          <path id="path-s1-prom-l0" class="flow-path-base" d="M 352 265 C 408 265, 412 114, 480 114" stroke="rgba(0,229,255,0.25)" />
+          <path id="dash-s1-prom-l0" class="flow-path-dash" data-steps="1,all" d="M 352 265 C 408 265, 412 114, 480 114" stroke="#00e5ff" marker-end="url(#arrowCyan)" />
+
+          <!-- Step 1C: Direct NVL72 Rack IPMI/Redfish -> L0 Telemetry -->
+          <path id="path-s1-rack-l0" class="flow-path-base" d="M 164 108 C 280 108, 340 94, 480 94" stroke="rgba(118,185,0,0.25)" />
+          <path id="dash-s1-rack-l0" class="flow-path-dash" data-steps="1,all" d="M 164 108 C 280 108, 340 94, 480 94" stroke="#76b900" marker-end="url(#arrowGreen)" />
+
+          <!-- Step 2: Slurm 24.11+ (slurmrestd & SlurmDBD) -> L1 Scheduler -->
+          <path id="path-s2-slurm-l1" class="flow-path-base" d="M 352 365 C 415 365, 415 224, 480 224" stroke="rgba(245,183,0,0.25)" />
+          <path id="dash-s2-slurm-l1" class="flow-path-dash" data-steps="2,all" d="M 352 365 C 415 365, 415 224, 480 224" stroke="#f5b700" marker-end="url(#arrowGold)" />
+
+          <!-- Step 3: SQLite / MariaDB Galera HA <-> L2 Zero-Trust Security -->
+          <path id="path-s3-db-l2" class="flow-path-base" d="M 352 468 C 420 468, 420 334, 480 334" stroke="rgba(255,51,102,0.25)" />
+          <path id="dash-s3-db-l2" class="flow-path-dash" data-steps="3,all" d="M 352 468 C 420 468, 420 334, 480 334" stroke="#ff3366" marker-end="url(#arrowCrimson)" />
+
+          <!-- Internal Core Vertical Bus (L0 -> L1 -> L2 -> L3) -->
+          <path id="path-bus-l0-l1" class="flow-path-dash" data-steps="1,2,4,all" d="M 675 154 L 675 178" stroke="#00e5ff" />
+          <path id="path-bus-l1-l2" class="flow-path-dash" data-steps="2,3,4,all" d="M 675 264 L 675 288" stroke="#f5b700" />
+          <path id="path-bus-l2-l3" class="flow-path-dash" data-steps="3,5,all" d="M 675 374 L 675 398" stroke="#ff3366" />
+
+          <!-- Step 4A: L0 Telemetry -> Right UI NVL72 Tray Status Grid -->
+          <path id="path-s4-l0-ui" class="flow-path-base" d="M 870 110 C 935 110, 935 155, 996 155" stroke="rgba(118,185,0,0.28)" />
+          <path id="dash-s4-l0-ui" class="flow-path-dash" data-steps="4,all" d="M 870 110 C 935 110, 935 155, 996 155" stroke="#76b900" marker-end="url(#arrowGreen)" />
+
+          <!-- Step 4B: L1 Scheduler -> Right UI Slurm Queue Counters -->
+          <path id="path-s4-l1-ui" class="flow-path-base" d="M 870 224 C 938 224, 938 350, 996 350" stroke="rgba(0,229,255,0.28)" />
+          <path id="dash-s4-l1-ui" class="flow-path-dash" data-steps="4,2,all" d="M 870 224 C 938 224, 938 350, 996 350" stroke="#00e5ff" marker-end="url(#arrowCyan)" />
+
+          <!-- Step 4C: L2 mTLS Gate -> Right UI Verified Session -->
+          <path id="path-s4-l2-ui" class="flow-path-base" d="M 870 334 C 935 334, 935 385, 996 385" stroke="rgba(255,51,102,0.26)" />
+          <path id="dash-s4-l2-ui" class="flow-path-dash" data-steps="3,4,all" d="M 870 334 C 935 334, 935 385, 996 385" stroke="#ff3366" marker-end="url(#arrowCrimson)" />
+
+          <!-- Step 5: L3 Embedded AI Auto-Follow -> Right UI AI Co-Pilot & Voice -->
+          <path id="path-s5-l3-ui" class="flow-path-base" d="M 870 444 C 935 444, 935 462, 996 462" stroke="rgba(0,229,255,0.3)" />
+          <path id="dash-s5-l3-ui" class="flow-path-dash" data-steps="5,all" d="M 870 444 C 935 444, 935 462, 996 462" stroke="#00e5ff" marker-end="url(#arrowCyan)" />
+
+          <!-- Step 5 Feedback Arc: AI Auto-Follow Inspects L0-L2 -->
+          <path id="path-s5-autofollow" class="flow-path-base" d="M 480 444 C 442 444, 442 125, 480 125" stroke="rgba(0,229,255,0.2)" />
+          <path id="dash-s5-autofollow" class="flow-path-dash" data-steps="5,all" d="M 480 444 C 442 444, 442 125, 480 125" stroke="#00e5ff" marker-end="url(#arrowCyan)" />
+        </g>
+
+        <!-- ==================================================================
+             ZONE 1 (LEFT): INFRASTRUCTURE & DATA SOURCES
+             ================================================================== -->
+
+        <!-- 1. NVIDIA GB200 NVL72 RACK (18 Stacked Compute Trays) -->
+        <g id="node-rack" class="arch-node" data-steps="1,4,all">
+          <rect x="26" y="46" width="138" height="466" rx="10" fill="url(#rackGrad)" stroke="#76b900" stroke-width="1.6" />
+          <!-- Rack Header -->
+          <rect x="32" y="52" width="126" height="36" rx="6" fill="#070d18" stroke="rgba(118,185,0,0.4)" stroke-width="1" />
+          <text x="95" y="67" text-anchor="middle" fill="#76b900" font-family="JetBrains Mono, monospace" font-size="9.5" font-weight="700">NVIDIA GB200</text>
+          <text x="95" y="80" text-anchor="middle" fill="#e8f1ff" font-family="Inter, sans-serif" font-size="10" font-weight="700">NVL72 RACK (18x)</text>
+
+          <!-- NVLink Spine Rail on Left Edge -->
+          <rect x="33" y="96" width="6" height="384" rx="3" fill="#0c1c12" stroke="rgba(118,185,0,0.45)" stroke-width="0.8" />
+          <rect id="nvlinkSpinePulse" x="34" y="98" width="4" height="380" rx="2" fill="#76b900" opacity="0.45" />
+
+          <!-- Container where JS generates 18 stacked GB200 compute trays -->
+          <g id="rackTraysContainer"></g>
+
+          <!-- Rack Footer -->
+          <text x="95" y="499" text-anchor="middle" fill="#8aa0c2" font-family="JetBrains Mono, monospace" font-size="8.5">72x B200 GPUs | 36x Grace</text>
+        </g>
+
+        <!-- 2. PROMETHEUS SCRAPERS & NATIVE EXPORTERS -->
+        <g id="node-prometheus" class="arch-node" data-steps="1,all">
+          <rect x="206" y="218" width="146" height="94" rx="10" fill="url(#panelGrad)" stroke="#00e5ff" stroke-width="1.6" />
+          <rect x="214" y="226" width="130" height="20" rx="4" fill="rgba(0,229,255,0.12)" />
+          <text x="279" y="239" text-anchor="middle" fill="#00e5ff" font-family="JetBrains Mono, monospace" font-size="8.8" font-weight="700">NATIVE SCRAPERS</text>
+          <text x="279" y="261" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="700">Prometheus Exporters</text>
+          <text x="279" y="276" text-anchor="middle" fill="#9fb5d6" font-family="JetBrains Mono, monospace" font-size="8.5">DCGM :9400 | Node :9100</text>
+          <!-- Zero Grafana Badge -->
+          <rect x="220" y="285" width="118" height="18" rx="9" fill="rgba(118,185,0,0.16)" stroke="#76b900" stroke-width="1" />
+          <text x="279" y="297" text-anchor="middle" fill="#a8e63d" font-family="JetBrains Mono, monospace" font-size="8.2" font-weight="700">ZERO GRAFANA DEPENDENCY</text>
+        </g>
+
+        <!-- 3. SLURM 24.11+ (slurmrestd & SlurmDBD) -->
+        <g id="node-slurm" class="arch-node" data-steps="2,all">
+          <rect x="206" y="324" width="146" height="84" rx="10" fill="url(#panelGrad)" stroke="#f5b700" stroke-width="1.6" />
+          <rect x="214" y="332" width="130" height="20" rx="4" fill="rgba(245,183,0,0.14)" />
+          <text x="279" y="345" text-anchor="middle" fill="#f5b700" font-family="JetBrains Mono, monospace" font-size="8.8" font-weight="700">SCHEDULER &amp; DB</text>
+          <text x="279" y="367" text-anchor="middle" fill="#ffffff" font-size="11.5" font-weight="700">Slurm 24.11+</text>
+          <text x="279" y="382" text-anchor="middle" fill="#cbd5e1" font-family="JetBrains Mono, monospace" font-size="8.6">slurmrestd + SlurmDBD</text>
+          <text x="279" y="397" text-anchor="middle" fill="#8aa0c2" font-family="JetBrains Mono, monospace" font-size="8">REST v0.0.41 / JWT Auth</text>
+        </g>
+
+        <!-- 4. SQLITE / MARIADB GALERA HA -->
+        <g id="node-galera" class="arch-node" data-steps="3,all">
+          <rect x="206" y="420" width="146" height="92" rx="10" fill="url(#panelGrad)" stroke="#ff3366" stroke-width="1.6" />
+          <rect x="214" y="428" width="130" height="20" rx="4" fill="rgba(255,51,102,0.14)" />
+          <text x="279" y="441" text-anchor="middle" fill="#ff668c" font-family="JetBrains Mono, monospace" font-size="8.8" font-weight="700">STATE PERSISTENCE</text>
+          <text x="279" y="463" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="700">SQLite / MariaDB</text>
+          <text x="279" y="478" text-anchor="middle" fill="#e2e8f0" font-size="10.5" font-weight="600">Galera Cluster HA</text>
+          <rect x="223" y="486" width="112" height="17" rx="8.5" fill="rgba(255,51,102,0.14)" stroke="rgba(255,51,102,0.55)" stroke-width="0.9" />
+          <text x="279" y="497.5" text-anchor="middle" fill="#ff99b3" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">LAB TO 10,000+ NODES</text>
+        </g>
+
+        <!-- ==================================================================
+             ZONE 2 (CENTER): BMAS COMMAND PLANE CORE (L0–L3 STACK)
+             ================================================================== -->
+        <g id="coreShell">
+          <rect x="466" y="46" width="418" height="466" rx="14" fill="url(#coreGrad)" stroke="rgba(0,229,255,0.35)" stroke-width="1.4" stroke-dasharray="6 4" />
+          <text x="675" y="65" text-anchor="middle" fill="#8aa0c2" font-family="JetBrains Mono, monospace" font-size="9.5" font-weight="600" letter-spacing="1.2">
+            COMPILED CYTHON ENGINE (~57 MB AIR-GAPPED BUNDLE)
+          </text>
+        </g>
+
+        <!-- L0 | Telemetry & Bare-Metal Inventory -->
+        <g id="node-l0" class="arch-node" data-steps="1,4,5,all">
+          <rect x="480" y="76" width="390" height="78" rx="10" fill="url(#panelGrad)" stroke="#00e5ff" stroke-width="1.8" />
+          <rect x="492" y="88" width="42" height="24" rx="5" fill="rgba(0,229,255,0.2)" stroke="#00e5ff" stroke-width="1" />
+          <text x="513" y="104" text-anchor="middle" fill="#00e5ff" font-family="JetBrains Mono, monospace" font-size="12" font-weight="800">L0</text>
+          <text x="546" y="104" fill="#ffffff" font-size="13" font-weight="700">Telemetry &amp; Bare-Metal Inventory</text>
+          <text x="546" y="123" fill="#a9bddb" font-size="10.5">Direct DCGM + Node Exporter ingestion across 18x NVL72 trays</text>
+          <text x="546" y="140" fill="#76b900" font-family="JetBrains Mono, monospace" font-size="9.2">• Zero Grafana Overhead  • Live Thermal / NVLink / Full-Staff Inventory</text>
+        </g>
+
+        <!-- L1 | Scheduler & Cluster Balancing -->
+        <g id="node-l1" class="arch-node" data-steps="2,4,5,all">
+          <rect x="480" y="182" width="390" height="82" rx="10" fill="url(#panelGrad)" stroke="#f5b700" stroke-width="1.8" />
+          <rect x="492" y="194" width="42" height="24" rx="5" fill="rgba(245,183,0,0.2)" stroke="#f5b700" stroke-width="1" />
+          <text x="513" y="210" text-anchor="middle" fill="#f5b700" font-family="JetBrains Mono, monospace" font-size="12" font-weight="800">L1</text>
+          <text x="546" y="210" fill="#ffffff" font-size="13" font-weight="700">Scheduler &amp; Cluster Balancing</text>
+          <text x="546" y="229" fill="#a9bddb" font-size="10.5">Native Slurm 24.11+ REST API (slurmrestd) &amp; SlurmDBD sync</text>
+          <text x="546" y="247" fill="#f5b700" font-family="JetBrains Mono, monospace" font-size="9.2">• Deterministic Job Orchestration  • Queue &amp; Partition Balancing</text>
+        </g>
+
+        <!-- L2 | Zero-Trust Security & Enterprise RBAC -->
+        <g id="node-l2" class="arch-node" data-steps="3,4,5,all">
+          <rect x="480" y="292" width="390" height="82" rx="10" fill="url(#panelGrad)" stroke="#ff3366" stroke-width="1.8" />
+          <rect x="492" y="304" width="42" height="24" rx="5" fill="rgba(255,51,102,0.2)" stroke="#ff3366" stroke-width="1" />
+          <text x="513" y="320" text-anchor="middle" fill="#ff668c" font-family="JetBrains Mono, monospace" font-size="12" font-weight="800">L2</text>
+          <text x="546" y="320" fill="#ffffff" font-size="13" font-weight="700">Zero-Trust Security &amp; Enterprise RBAC</text>
+          <text x="546" y="339" fill="#a9bddb" font-size="10.5">Built-in mTLS / TLS 1.3 / HTTPS installer &amp; automated cert import</text>
+          <text x="546" y="357" fill="#ff85a3" font-family="JetBrains Mono, monospace" font-size="9.2">• Multi-Role RBAC  • Active Directory (AD)  • Enterprise VPN Ready</text>
+        </g>
+
+        <!-- L3 | Embedded AI with Auto-Follow & Neural Voice -->
+        <g id="node-l3" class="arch-node" data-steps="5,all">
+          <rect x="480" y="402" width="390" height="94" rx="10" fill="url(#panelGrad)" stroke="#00e5ff" stroke-width="1.8" />
+          <rect x="492" y="414" width="42" height="24" rx="5" fill="rgba(0,229,255,0.2)" stroke="#00e5ff" stroke-width="1" />
+          <text x="513" y="430" text-anchor="middle" fill="#00e5ff" font-family="JetBrains Mono, monospace" font-size="12" font-weight="800">L3</text>
+          <text x="546" y="430" fill="#ffffff" font-size="13" font-weight="700">Embedded AI with Auto-Follow &amp; Voice</text>
+          <text x="546" y="449" fill="#a9bddb" font-size="10.5">Context-aware AI embedded across L0–L3; explains live metrics</text>
+          <text x="546" y="467" fill="#00e5ff" font-family="JetBrains Mono, monospace" font-size="9.2">• Auto-Follow Active Layer  • Local Air-Gapped Piper ONNX Voice</text>
+          <text x="546" y="483" fill="#76b900" font-family="JetBrains Mono, monospace" font-size="8.8">STATUS: 100% OFFLINE NEURAL INFERENCE — ZERO CLOUD CALLS</text>
+        </g>
+
+        <!-- ==================================================================
+             ZONE 3 (RIGHT): LIVE FRONT-END COMMAND PLANE PREVIEW
+             ================================================================== -->
+        <g id="node-frontend" class="arch-node" data-steps="4,5,all">
+          <!-- Outer Browser/App Frame -->
+          <rect x="996" y="46" width="358" height="466" rx="12" fill="#0a1120" stroke="#f5b700" stroke-width="1.6" />
+
+          <!-- Miniature App Topbar -->
+          <rect x="996" y="46" width="358" height="30" rx="12" fill="#121d35" />
+          <rect x="996" y="64" width="358" height="12" fill="#121d35" />
+          <circle cx="1012" cy="61" r="4" fill="#ff5f56" />
+          <circle cx="1025" cy="61" r="4" fill="#ffbd2e" />
+          <circle cx="1038" cy="61" r="4" fill="#27c93f" />
+          <text x="1184" y="65" text-anchor="middle" fill="#cbd5e1" font-family="JetBrains Mono, monospace" font-size="9.2" font-weight="600">
+            https://bmas-nvl72.local (mTLS)
+          </text>
+
+          <!-- Sub-panel A: Live GB200 NVL72 Tray Status Grid (18 Trays) -->
+          <g id="ui-tray-panel">
+            <rect x="1010" y="88" width="330" height="222" rx="8" fill="#070d19" stroke="rgba(118,185,0,0.45)" stroke-width="1.2" />
+            <text x="1022" y="106" fill="#76b900" font-family="JetBrains Mono, monospace" font-size="9.5" font-weight="700">
+              LIVE GB200 NVL72 TRAY GRID (18 TRAYS)
+            </text>
+            <text id="uiTrayStatusBadge" x="1328" y="106" text-anchor="end" fill="#00e5ff" font-family="JetBrains Mono, monospace" font-size="8.8" font-weight="700">
+              POLLING...
+            </text>
+            <!-- Container where JS renders 18 interactive mini tray cards with live GPU util bars -->
+            <g id="uiTraysContainer"></g>
+          </g>
+
+          <!-- Sub-panel B: Slurm 24.11+ Job Queue Metric Counters -->
+          <g id="ui-slurm-panel">
+            <rect x="1010" y="320" width="330" height="84" rx="8" fill="#070d19" stroke="rgba(245,183,0,0.45)" stroke-width="1.2" />
+            <text x="1022" y="338" fill="#f5b700" font-family="JetBrains Mono, monospace" font-size="9.2" font-weight="700">
+              SLURM 24.11+ LIVE QUEUE TELEMETRY
+            </text>
+
+            <!-- Metric Box 1 -->
+            <rect x="1020" y="347" width="98" height="48" rx="6" fill="#0e172a" stroke="rgba(0,229,255,0.25)" />
+            <text x="1069" y="362" text-anchor="middle" fill="#8aa0c2" font-family="JetBrains Mono, monospace" font-size="8">RUNNING JOBS</text>
+            <text id="metricJobs" x="1069" y="384" text-anchor="middle" fill="#00e5ff" font-family="JetBrains Mono, monospace" font-size="16" font-weight="800">142</text>
+
+            <!-- Metric Box 2 -->
+            <rect x="1126" y="347" width="98" height="48" rx="6" fill="#0e172a" stroke="rgba(118,185,0,0.25)" />
+            <text x="1175" y="362" text-anchor="middle" fill="#8aa0c2" font-family="JetBrains Mono, monospace" font-size="8">GPU UTIL AVG</text>
+            <text id="metricUtil" x="1175" y="384" text-anchor="middle" fill="#76b900" font-family="JetBrains Mono, monospace" font-size="16" font-weight="800">94.8%</text>
+
+            <!-- Metric Box 3 -->
+            <rect x="1232" y="347" width="98" height="48" rx="6" fill="#0e172a" stroke="rgba(245,183,0,0.25)" />
+            <text x="1281" y="362" text-anchor="middle" fill="#8aa0c2" font-family="JetBrains Mono, monospace" font-size="8">REST LATENCY</text>
+            <text id="metricLatency" x="1281" y="384" text-anchor="middle" fill="#f5b700" font-family="JetBrains Mono, monospace" font-size="16" font-weight="800">11ms</text>
+          </g>
+
+          <!-- Sub-panel C: L3 Embedded AI Auto-Follow & Voice Indicator -->
+          <g id="ui-ai-panel">
+            <rect x="1010" y="414" width="330" height="86" rx="8" fill="#070d19" stroke="rgba(0,229,255,0.55)" stroke-width="1.3" />
+            <circle cx="1026" cy="432" r="4.5" fill="#00e5ff" class="pulse-indicator" />
+            <text x="1038" y="435" fill="#00e5ff" font-family="JetBrains Mono, monospace" font-size="9.5" font-weight="700">
+              L3 AI AUTO-FOLLOW // VOICE ACTIVE
+            </text>
+
+            <!-- Animated Piper ONNX Voice Waveform -->
+            <g id="voiceWaveform" class="voice-active" transform="translate(1282, 421)">
+              <rect class="voice-bar voice-bar-1" x="0" y="0" width="4" height="18" rx="2" fill="#00e5ff" />
+              <rect class="voice-bar voice-bar-2" x="7" y="0" width="4" height="18" rx="2" fill="#76b900" />
+              <rect class="voice-bar voice-bar-3" x="14" y="0" width="4" height="18" rx="2" fill="#00e5ff" />
+              <rect class="voice-bar voice-bar-4" x="21" y="0" width="4" height="18" rx="2" fill="#f5b700" />
+              <rect class="voice-bar voice-bar-5" x="28" y="0" width="4" height="18" rx="2" fill="#00e5ff" />
+              <rect class="voice-bar voice-bar-6" x="35" y="0" width="4" height="18" rx="2" fill="#76b900" />
+            </g>
+
+            <!-- Live AI Context Line -->
+            <rect x="1020" y="446" width="310" height="44" rx="6" fill="#0c162b" stroke="rgba(0,229,255,0.22)" />
+            <text id="aiContextLine1" x="1030" y="464" fill="#e2e8f0" font-family="JetBrains Mono, monospace" font-size="9.2">
+              "Tracking L0–L3: 18/18 GB200 trays nominal."
+            </text>
+            <text id="aiContextLine2" x="1030" y="480" fill="#76b900" font-family="JetBrains Mono, monospace" font-size="8.6">
+              [Auto-Follow: LOCKED] [Piper ONNX: Local Ready]
+            </text>
+          </g>
+        </g>
+
+        <!-- ==================================================================
+             ANIMATED GLOWING PACKETS (<animateMotion> along SVG paths)
+             ================================================================== -->
+        <g id="packetsLayer">
+          <!-- Step 1 Packets -->
+          <g class="packet-group" data-steps="1,all">
+            <circle r="4.5" fill="#76b900" filter="url(#glowGreen)">
+              <animateMotion dur="1.6s" repeatCount="indefinite">
+                <mpath href="#path-s1-rack-prom" />
+              </animateMotion>
+            </circle>
+            <circle r="5" fill="#00e5ff" filter="url(#glowCyan)">
+              <animateMotion dur="1.8s" repeatCount="indefinite">
+                <mpath href="#path-s1-prom-l0" />
+              </animateMotion>
+            </circle>
+            <circle r="4" fill="#76b900" filter="url(#glowGreen)">
+              <animateMotion dur="2.1s" repeatCount="indefinite">
+                <mpath href="#path-s1-rack-l0" />
+              </animateMotion>
+            </circle>
+          </g>
+
+          <!-- Step 2 Packets -->
+          <g class="packet-group" data-steps="2,all">
+            <circle r="5" fill="#f5b700" filter="url(#glowGold)">
+              <animateMotion dur="1.7s" repeatCount="indefinite">
+                <mpath href="#path-s2-slurm-l1" />
+              </animateMotion>
+            </circle>
+            <circle r="4" fill="#00e5ff" filter="url(#glowCyan)">
+              <animateMotion dur="2.0s" repeatCount="indefinite">
+                <mpath href="#path-s4-l1-ui" />
+              </animateMotion>
+            </circle>
+          </g>
+
+          <!-- Step 3 Packets -->
+          <g class="packet-group" data-steps="3,all">
+            <circle r="5" fill="#ff3366" filter="url(#glowCrimson)">
+              <animateMotion dur="1.8s" repeatCount="indefinite">
+                <mpath href="#path-s3-db-l2" />
+              </animateMotion>
+            </circle>
+            <circle r="4.5" fill="#ff3366" filter="url(#glowCrimson)">
+              <animateMotion dur="2.0s" repeatCount="indefinite">
+                <mpath href="#path-s4-l2-ui" />
+              </animateMotion>
+            </circle>
+          </g>
+
+          <!-- Step 4 Packets -->
+          <g class="packet-group" data-steps="4,all">
+            <circle r="5.5" fill="#76b900" filter="url(#glowGreen)">
+              <animateMotion dur="1.5s" repeatCount="indefinite">
+                <mpath href="#path-s4-l0-ui" />
+              </animateMotion>
+            </circle>
+            <circle r="4.5" fill="#00e5ff" filter="url(#glowCyan)">
+              <animateMotion dur="1.7s" repeatCount="indefinite">
+                <mpath href="#path-s4-l1-ui" />
+              </animateMotion>
+            </circle>
+          </g>
+
+          <!-- Step 5 Packets -->
+          <g class="packet-group" data-steps="5,all">
+            <circle r="5" fill="#00e5ff" filter="url(#glowCyan)">
+              <animateMotion dur="1.6s" repeatCount="indefinite">
+                <mpath href="#path-s5-l3-ui" />
+              </animateMotion>
+            </circle>
+            <circle r="4.5" fill="#00e5ff" filter="url(#glowCyan)">
+              <animateMotion dur="2.2s" repeatCount="indefinite">
+                <mpath href="#path-s5-autofollow" />
+              </animateMotion>
+            </circle>
+          </g>
+        </g>
+      </svg>
+    </main>
+
+    <!-- ======================================================================
+         BOTTOM STRIP: Compact Dark macOS-Style Terminal + 5-Step Summary Cards
+         ====================================================================== -->
+    <section class="grid grid-cols-1 lg:grid-cols-12 gap-3 print-keep">
+      <!-- Left: Compact Dark macOS-Style Telemetry Terminal -->
+      <div class="lg:col-span-5 hpc-panel terminal-card rounded-xl overflow-hidden flex flex-col">
+        <!-- macOS Window Titlebar -->
+        <div class="px-3.5 py-2 bg-[#0c1322] border-b border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]"></span>
+            <span class="ml-2 text-[11px] font-mono-code font-semibold text-slate-300">
+              bmas-nvl72-daemon — live-telemetry.log
+            </span>
+          </div>
+          <span id="termStatusPill" class="text-[10px] font-mono-code px-2 py-0.5 rounded bg-emerald-500/15 text-[#76b900] border border-[#76b900]/30">
+            STREAMING
+          </span>
+        </div>
+
+        <!-- Live Terminal Log Output -->
+        <div id="terminalOutput"
+          class="p-3 bg-[#050810] font-mono-code text-[11px] leading-relaxed h-[126px] overflow-y-auto terminal-scroll space-y-1">
+          <!-- Populated dynamically by JS -->
+        </div>
+      </div>
+
+      <!-- Right: Synchronized 5-Step Summary Cards -->
+      <div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-5 gap-2">
+        <!-- Card 1 -->
+        <div class="legend-card rounded-xl p-2.5 flex flex-col justify-between" data-card-step="1" style="--active-accent: #76b900;">
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] font-mono-code font-bold text-[#76b900]">STEP 01</span>
+              <span class="w-2 h-2 rounded-full bg-[#76b900]"></span>
+            </div>
+            <h3 class="text-xs font-bold text-white leading-tight">L0 Native Scrapers</h3>
+            <p class="text-[10.5px] text-slate-400 mt-1 leading-snug">
+              Polls 18x NVL72 trays via DCGM &amp; Node Exporters with zero Grafana.
+            </p>
+          </div>
+          <span class="mt-2 text-[9.5px] font-mono-code text-cyan-300">:9400 / :9100</span>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="legend-card rounded-xl p-2.5 flex flex-col justify-between" data-card-step="2" style="--active-accent: #f5b700;">
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] font-mono-code font-bold text-[#f5b700]">STEP 02</span>
+              <span class="w-2 h-2 rounded-full bg-[#f5b700]"></span>
+            </div>
+            <h3 class="text-xs font-bold text-white leading-tight">L1 Slurm 24.11+</h3>
+            <p class="text-[10.5px] text-slate-400 mt-1 leading-snug">
+              Pulls jobs, nodes &amp; accounting from slurmrestd &amp; SlurmDBD.
+            </p>
+          </div>
+          <span class="mt-2 text-[9.5px] font-mono-code text-[#f5b700]">REST v0.0.41</span>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="legend-card rounded-xl p-2.5 flex flex-col justify-between" data-card-step="3" style="--active-accent: #ff3366;">
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] font-mono-code font-bold text-[#ff3366]">STEP 03</span>
+              <span class="w-2 h-2 rounded-full bg-[#ff3366]"></span>
+            </div>
+            <h3 class="text-xs font-bold text-white leading-tight">L2 mTLS &amp; Galera</h3>
+            <p class="text-[10.5px] text-slate-400 mt-1 leading-snug">
+              Enforces mTLS, RBAC, AD/VPN &amp; SQLite-to-Galera HA state sync.
+            </p>
+          </div>
+          <span class="mt-2 text-[9.5px] font-mono-code text-[#ff668c]">10,000+ Nodes</span>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="legend-card rounded-xl p-2.5 flex flex-col justify-between" data-card-step="4" style="--active-accent: #76b900;">
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] font-mono-code font-bold text-[#76b900]">STEP 04</span>
+              <span class="w-2 h-2 rounded-full bg-[#76b900]"></span>
+            </div>
+            <h3 class="text-xs font-bold text-white leading-tight">NVL72 Tray Render</h3>
+            <p class="text-[10.5px] text-slate-400 mt-1 leading-snug">
+              Streams live telemetry to render 18x GPU tray bars &amp; queue metrics.
+            </p>
+          </div>
+          <span class="mt-2 text-[9.5px] font-mono-code text-[#76b900]">DOM @ 60fps</span>
+        </div>
+
+        <!-- Card 5 -->
+        <div class="legend-card rounded-xl p-2.5 flex flex-col justify-between" data-card-step="5" style="--active-accent: #00e5ff;">
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] font-mono-code font-bold text-[#00e5ff]">STEP 05</span>
+              <span class="w-2 h-2 rounded-full bg-[#00e5ff]"></span>
+            </div>
+            <h3 class="text-xs font-bold text-white leading-tight">L3 AI Auto-Follow</h3>
+            <p class="text-[10.5px] text-slate-400 mt-1 leading-snug">
+              Embedded AI tracks active layer &amp; runs offline Piper ONNX voice.
+            </p>
+          </div>
+          <span class="mt-2 text-[9.5px] font-mono-code text-cyan-300">Air-Gapped AI</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         MANDATORY FOOTER: Copyright & NDA Confidentiality Notice
+         ====================================================================== -->
+    <footer class="hpc-panel rounded-xl px-4 py-2.5 text-center sm:text-left flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 print-keep">
+      <div class="text-[11px] font-semibold text-slate-200">
+        &copy; 2026 Bare Metal Applied Science LLC | Author: Jefferson Lucas |
+        <a href="https://baremetalappliedscience.com/" target="_blank" rel="noopener noreferrer"
+          class="text-cyan-400 hover:text-cyan-300 underline decoration-cyan-500/40">
+          https://baremetalappliedscience.com/
+        </a>
+      </div>
+      <div class="text-[10px] font-mono-code text-slate-400">
+        NDA &amp; CONFIDENTIALITY NOTICE: Proprietary architectural documentation of Bare Metal Applied Science LLC. All rights reserved.
+      </div>
+    </footer>
+  </div>
+
+  <!-- ========================================================================
+       VANILLA JAVASCRIPT: Interactive Animation Engine, Tray Polling & Logs
+       ======================================================================== -->
+  <script>
+    (function () {
+      'use strict';
+
+      try {
+        const SVG_NS = 'http://www.w3.org/2000/svg';
+        const TOTAL_TRAYS = 18;
+        const STEP_DURATION_MS = 4500;
+
+        // Step metadata definitions
+        const STEP_CONFIG = {
+          '1': {
+            badge: 'STEP 1 / 5 // L0 TELEMETRY',
+            pillClass: 'active-green',
+            accent: '#76b900',
+            caption: 'Native Prometheus Scrapers & DCGM Exporters directly poll all 18 GB200 NVL72 compute trays—zero Grafana dependency required.',
+            aiLine1: '"L0 Ingestion active: Polling 72x B200 GPUs over NVLink."',
+            aiLine2: '[Auto-Follow: L0 TELEMETRY] [Zero Grafana Overhead]',
+            logs: [
+              { tag: 'L0-SCRAPE', color: '#76b900', msg: 'SCRAPE :9400/metrics [DCGM + Node Exporter] -> 18/18 trays OK (4.2ms)' },
+              { tag: 'L0-INV', color: '#00e5ff', msg: 'NVL72 Rack #01 thermal avg 54.2°C | NVLink5 fabric healthy' }
+            ]
+          },
+          '2': {
+            badge: 'STEP 2 / 5 // L1 SLURM 24.11+',
+            pillClass: 'active-gold',
+            accent: '#f5b700',
+            caption: 'BMAS L1 queries Slurm 24.11+ slurmrestd & SlurmDBD via REST v0.0.41 to balance bare-metal queues and deterministic GPU allocations.',
+            aiLine1: '"L1 Scheduler synced: 142 active jobs balanced across NVL72."',
+            aiLine2: '[Auto-Follow: L1 SLURM 24.11+] [REST v0.0.41: 11ms]',
+            logs: [
+              { tag: 'L1-SLURM', color: '#f5b700', msg: 'GET /slurm/v0.0.41/jobs & SlurmDBD sync -> 142 running, 0 stalled' },
+              { tag: 'L1-BAL', color: '#00e5ff', msg: 'Partition nvl72-prod balanced: 72/72 B200 GPUs allocated' }
+            ]
+          },
+          '3': {
+            badge: 'STEP 3 / 5 // L2 ZERO-TRUST & GALERA HA',
+            pillClass: 'active-crimson',
+            accent: '#ff3366',
+            caption: 'L2 enforces mTLS/TLS 1.3 certificates, Active Directory RBAC & VPN access while persisting cluster state across SQLite or MariaDB Galera HA.',
+            aiLine1: '"L2 Security verified: mTLS client cert & Galera quorum OK."',
+            aiLine2: '[Auto-Follow: L2 ZERO-TRUST] [Galera HA: 10k+ Node Ready]',
+            logs: [
+              { tag: 'L2-MTLS', color: '#ff3366', msg: 'mTLS cert verified (TLS 1.3) | AD RBAC role=HPC_ADMIN granted' },
+              { tag: 'L2-HA', color: '#f5b700', msg: 'Galera cluster quorum OK (3/3 nodes) | Delta state committed' }
+            ]
+          },
+          '4': {
+            badge: 'STEP 4 / 5 // FRONT-END NVL72 TRAY RENDER',
+            pillClass: 'active-green',
+            accent: '#76b900',
+            caption: 'Verified telemetry and Slurm job streams push directly to the BMAS Command Plane UI, lighting up all 18 GB200 NVL72 trays in real time.',
+            aiLine1: '"Front-End DOM synchronized: 18x GB200 trays rendering @ 60fps."',
+            aiLine2: '[Auto-Follow: LIVE TRAY GRID] [GPU Util: 94.8% Avg]',
+            logs: [
+              { tag: 'UI-RENDER', color: '#76b900', msg: 'Rendering 18x GB200 NVL72 trays to DOM -> GPU util bars updated' },
+              { tag: 'UI-SYNC', color: '#00e5ff', msg: 'Slurm queue counters + tray status cards hydrated via mTLS WSS' }
+            ]
+          },
+          '5': {
+            badge: 'STEP 5 / 5 // L3 EMBEDDED AI AUTO-FOLLOW',
+            pillClass: 'active-cyan',
+            accent: '#00e5ff',
+            caption: 'L3 Embedded AI locks Auto-Follow across L0–L3, interpreting live cluster metrics and activating the local air-gapped Piper ONNX voice engine.',
+            aiLine1: '"All 18 NVL72 trays optimal. Ready for voice command."',
+            aiLine2: '[Auto-Follow: LOCKED L0–L3] [Piper ONNX: 100% Air-Gapped]',
+            logs: [
+              { tag: 'L3-AI', color: '#00e5ff', msg: 'L3 AI Auto-Follow locked across L0–L3 context | Anomaly score 0.01' },
+              { tag: 'L3-VOICE', color: '#76b900', msg: 'Piper ONNX neural voice ready (offline local inference active)' }
+            ]
+          },
+          'all': {
+            badge: 'ALL ACTIVE // FULL-STACK OVERVIEW',
+            pillClass: 'active-cyan',
+            accent: '#00e5ff',
+            caption: 'Full-Stack Command Plane Active: Simultaneous L0 native scraping, L1 Slurm 24.11+ balancing, L2 mTLS/Galera HA, live 18-tray UI, and L3 AI Voice.',
+            aiLine1: '"Full-stack telemetry nominal across L0, L1, L2, and L3."',
+            aiLine2: '[Auto-Follow: FULL STACK] [18/18 Trays Online]',
+            logs: [
+              { tag: 'BMAS-CORE', color: '#00e5ff', msg: 'Full-stack pipeline active: L0 Scrapers + L1 Slurm + L2 mTLS + L3 AI' },
+              { tag: 'BMAS-HA', color: '#76b900', msg: '18x GB200 NVL72 trays streaming live | Zero Grafana dependency' }
+            ]
+          }
+        };
+
+        // Application State
+        let currentStep = '1';
+        let isAutoPlaying = true;
+        let stepElapsed = 0;
+        let pollTrayIndex = 0;
+        let rackTrayEls = [];
+        let uiTrayEls = [];
+
+        // DOM References
+        const rackContainer = document.getElementById('rackTraysContainer');
+        const uiTraysContainer = document.getElementById('uiTraysContainer');
+        const stepPills = document.querySelectorAll('.step-pill');
+        const legendCards = document.querySelectorAll('.legend-card');
+        const btnAutoPlay = document.getElementById('btnAutoPlay');
+        const autoPlayLabel = document.getElementById('autoPlayLabel');
+        const autoPlayIcon = document.getElementById('autoPlayIcon');
+        const captionBadge = document.getElementById('captionBadge');
+        const captionText = document.getElementById('captionText');
+        const cycleProgressBar = document.getElementById('cycleProgressBar');
+        const terminalOutput = document.getElementById('terminalOutput');
+        const uiTrayStatusBadge = document.getElementById('uiTrayStatusBadge');
+        const metricJobs = document.getElementById('metricJobs');
+        const metricUtil = document.getElementById('metricUtil');
+        const metricLatency = document.getElementById('metricLatency');
+        const aiContextLine1 = document.getElementById('aiContextLine1');
+        const aiContextLine2 = document.getElementById('aiContextLine2');
+        const voiceWaveform = document.getElementById('voiceWaveform');
+
+        function createSvgEl(tag, attrs) {
+          const el = document.createElementNS(SVG_NS, tag);
+          for (const [k, v] of Object.entries(attrs)) {
+            el.setAttribute(k, v);
+          }
+          return el;
+        }
+
+        function buildRackTrays() {
+          const startY = 96;
+          const trayHeight = 17.5;
+          const gap = 4;
+
+          for (let i = 0; i < TOTAL_TRAYS; i++) {
+            const y = startY + i * (trayHeight + gap);
+            const g = createSvgEl('g', { id: `rack-tray-${i + 1}` });
+
+            const rect = createSvgEl('rect', {
+              x: 44,
+              y: y,
+              width: 112,
+              height: trayHeight,
+              rx: 3,
+              fill: '#0e192e',
+              stroke: 'rgba(118,185,0,0.35)',
+              'stroke-width': '1'
+            });
+
+            const led = createSvgEl('circle', {
+              cx: 52,
+              cy: y + trayHeight / 2,
+              r: 2.6,
+              fill: '#334155'
+            });
+
+            const label = createSvgEl('text', {
+              x: 60,
+              y: y + 12,
+              fill: '#94a3b8',
+              'font-family': 'JetBrains Mono, monospace',
+              'font-size': '8.2',
+              'font-weight': '600'
+            });
+            label.textContent = `TRAY-${String(i + 1).padStart(2, '0')} [4xB200]`;
+
+            g.appendChild(rect);
+            g.appendChild(led);
+            g.appendChild(label);
+            rackContainer.appendChild(g);
+
+            rackTrayEls.push({ rect, led, label });
+          }
+        }
+
+        function buildUiTrayGrid() {
+          const cols = 3;
+          const startX = 1020;
+          const startY = 115;
+          const cardW = 99;
+          const cardH = 26;
+          const gapX = 7;
+          const gapY = 5.5;
+
+          for (let i = 0; i < TOTAL_TRAYS; i++) {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const x = startX + col * (cardW + gapX);
+            const y = startY + row * (cardH + gapY);
+
+            const baseUtil = 84 + ((i * 7) % 15);
+
+            const g = createSvgEl('g', {});
+            const bg = createSvgEl('rect', {
+              x: x,
+              y: y,
+              width: cardW,
+              height: cardH,
+              rx: 4,
+              fill: '#0d1628',
+              stroke: 'rgba(0,229,255,0.22)',
+              'stroke-width': '1'
+            });
+
+            const title = createSvgEl('text', {
+              x: x + 6,
+              y: y + 11,
+              fill: '#cbd5e1',
+              'font-family': 'JetBrains Mono, monospace',
+              'font-size': '7.8',
+              'font-weight': '700'
+            });
+            title.textContent = `T${String(i + 1).padStart(2, '0')}`;
+
+            const pctText = createSvgEl('text', {
+              x: x + cardW - 6,
+              y: y + 11,
+              'text-anchor': 'end',
+              fill: '#76b900',
+              'font-family': 'JetBrains Mono, monospace',
+              'font-size': '7.6',
+              'font-weight': '700'
+            });
+            pctText.textContent = `${baseUtil}%`;
+
+            const barTrack = createSvgEl('rect', {
+              x: x + 6,
+              y: y + 16,
+              width: cardW - 12,
+              height: 5,
+              rx: 2.5,
+              fill: '#17233b'
+            });
+
+            const barFill = createSvgEl('rect', {
+              x: x + 6,
+              y: y + 16,
+              width: Math.round(((cardW - 12) * baseUtil) / 100),
+              height: 5,
+              rx: 2.5,
+              fill: '#76b900'
+            });
+
+            g.appendChild(bg);
+            g.appendChild(title);
+            g.appendChild(pctText);
+            g.appendChild(barTrack);
+            g.appendChild(barFill);
+            uiTraysContainer.appendChild(g);
+
+            uiTrayEls.push({ bg, title, pctText, barFill, maxBarW: cardW - 12, baseUtil });
+          }
+        }
+
+        function appendTerminalLog(tag, color, message) {
+          const now = new Date();
+          const ts = now.toTimeString().split(' ')[0];
+          const line = document.createElement('div');
+          line.className = 'log-entry text-slate-300';
+          line.innerHTML =
+            `<span class="text-slate-500">[${ts}]</span> ` +
+            `<span style="color:${color}; font-weight:700;">[${tag}]</span> ` +
+            `<span>${message}</span>`;
+
+          terminalOutput.appendChild(line);
+
+          while (terminalOutput.children.length > 14) {
+            terminalOutput.removeChild(terminalOutput.firstChild);
+          }
+          terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        }
+
+        function setStep(stepKey, resetProgress = true) {
+          currentStep = String(stepKey);
+          if (resetProgress) {
+            stepElapsed = 0;
+            cycleProgressBar.style.width = '0%';
+          }
+
+          const cfg = STEP_CONFIG[currentStep] || STEP_CONFIG['1'];
+
+          stepPills.forEach((btn) => {
+            btn.classList.remove('active-cyan', 'active-green', 'active-gold', 'active-crimson');
+            if (btn.dataset.step === currentStep) {
+              btn.classList.add(cfg.pillClass);
+            }
+          });
+
+          legendCards.forEach((card) => {
+            const isMatch = currentStep === 'all' || card.dataset.cardStep === currentStep;
+            card.classList.toggle('active-card', isMatch);
+          });
+
+          captionBadge.textContent = cfg.badge;
+          captionBadge.style.borderColor = cfg.accent;
+          captionBadge.style.color = cfg.accent;
+          captionText.textContent = cfg.caption;
+          cycleProgressBar.style.backgroundColor = cfg.accent;
+
+          aiContextLine1.textContent = cfg.aiLine1;
+          aiContextLine2.textContent = cfg.aiLine2;
+
+          if (currentStep === '5' || currentStep === 'all') {
+            voiceWaveform.classList.add('voice-active');
+          } else {
+            voiceWaveform.classList.remove('voice-active');
+          }
+
+          document.querySelectorAll('.arch-node').forEach((node) => {
+            const steps = (node.dataset.steps || '').split(',');
+            const active = currentStep === 'all' || steps.includes(currentStep);
+            node.classList.toggle('highlighted', active);
+            node.classList.toggle('dimmed', !active);
+          });
+
+          document.querySelectorAll('.flow-path-dash').forEach((path) => {
+            const steps = (path.dataset.steps || '').split(',');
+            const active = currentStep === 'all' || steps.includes(currentStep);
+            path.classList.toggle('flow-active', active);
+            path.classList.toggle('flow-dimmed', !active);
+          });
+
+          document.querySelectorAll('.packet-group').forEach((pg) => {
+            const steps = (pg.dataset.steps || '').split(',');
+            const active = currentStep === 'all' || steps.includes(currentStep);
+            pg.classList.toggle('hidden-packet', !active);
+          });
+
+          if (currentStep === '1') {
+            uiTrayStatusBadge.textContent = 'SCRAPING L0...';
+            uiTrayStatusBadge.setAttribute('fill', '#76b900');
+          } else if (currentStep === '4' || currentStep === 'all') {
+            uiTrayStatusBadge.textContent = '18/18 ONLINE';
+            uiTrayStatusBadge.setAttribute('fill', '#00e5ff');
+          } else {
+            uiTrayStatusBadge.textContent = 'SYNCED';
+            uiTrayStatusBadge.setAttribute('fill', '#76b900');
+          }
+
+          cfg.logs.forEach((entry) => {
+            appendTerminalLog(entry.tag, entry.color, entry.msg);
+          });
+        }
+
+        function tickTrayPolling() {
+          const activeIdx = pollTrayIndex % TOTAL_TRAYS;
+          const isPollingStep = currentStep === '1' || currentStep === '4' || currentStep === 'all';
+
+          rackTrayEls.forEach((tray, idx) => {
+            if (isPollingStep && idx === activeIdx) {
+              tray.rect.setAttribute('fill', '#17341a');
+              tray.rect.setAttribute('stroke', '#76b900');
+              tray.led.setAttribute('fill', '#00e5ff');
+              tray.label.setAttribute('fill', '#ffffff');
+            } else if (isPollingStep && idx === (activeIdx - 1 + TOTAL_TRAYS) % TOTAL_TRAYS) {
+              tray.rect.setAttribute('fill', '#122620');
+              tray.rect.setAttribute('stroke', 'rgba(118,185,0,0.75)');
+              tray.led.setAttribute('fill', '#76b900');
+              tray.label.setAttribute('fill', '#cbd5e1');
+            } else {
+              tray.rect.setAttribute('fill', '#0e192e');
+              tray.rect.setAttribute('stroke', 'rgba(118,185,0,0.32)');
+              tray.led.setAttribute('fill', '#76b900');
+              tray.label.setAttribute('fill', '#8aa0c2');
+            }
+          });
+
+          uiTrayEls.forEach((card, idx) => {
+            const jitter = ((idx + pollTrayIndex) % 3) - 1;
+            const util = Math.min(99, Math.max(80, card.baseUtil + jitter));
+            const barW = Math.round((card.maxBarW * util) / 100);
+            card.barFill.setAttribute('width', barW);
+            card.pctText.textContent = `${util}%`;
+
+            if ((currentStep === '4' || currentStep === 'all') && idx === activeIdx) {
+              card.bg.setAttribute('fill', '#102836');
+              card.bg.setAttribute('stroke', '#00e5ff');
+              card.barFill.setAttribute('fill', '#00e5ff');
+            } else {
+              card.bg.setAttribute('fill', '#0d1628');
+              card.bg.setAttribute('stroke', 'rgba(118,185,0,0.32)');
+              card.barFill.setAttribute('fill', '#76b900');
+            }
+          });
+
+          if (pollTrayIndex % 5 === 0) {
+            const jobs = 140 + (pollTrayIndex % 7);
+            const avgUtil = (94.2 + ((pollTrayIndex % 5) * 0.2)).toFixed(1);
+            const latency = 9 + (pollTrayIndex % 4);
+            metricJobs.textContent = String(jobs);
+            metricUtil.textContent = `${avgUtil}%`;
+            metricLatency.textContent = `${latency}ms`;
+          }
+
+          pollTrayIndex++;
+        }
+
+        function toggleAutoPlay() {
+          isAutoPlaying = !isAutoPlaying;
+          autoPlayLabel.textContent = isAutoPlaying ? 'Pause' : 'Auto-Play';
+          autoPlayIcon.style.backgroundColor = isAutoPlaying ? '#76b900' : '#f5b700';
+          autoPlayIcon.classList.toggle('pulse-indicator', isAutoPlaying);
+        }
+
+        stepPills.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            setStep(btn.dataset.step, true);
+          });
+        });
+
+        legendCards.forEach((card) => {
+          card.addEventListener('click', () => {
+            setStep(card.dataset.cardStep, true);
+          });
+        });
+
+        btnAutoPlay.addEventListener('click', toggleAutoPlay);
+
+        buildRackTrays();
+        buildUiTrayGrid();
+        appendTerminalLog('BOOT', '#00e5ff', 'BMAS NVL72 Command Plane Blueprint initialized (1440px Landscape)');
+        setStep('1', true);
+
+        setInterval(tickTrayPolling, 180);
+
+        setInterval(() => {
+          if (!isAutoPlaying || currentStep === 'all') return;
+          stepElapsed += 100;
+          const pct = Math.min(100, (stepElapsed / STEP_DURATION_MS) * 100);
+          cycleProgressBar.style.width = `${pct}%`;
+
+          if (stepElapsed >= STEP_DURATION_MS) {
+            const nextNum = (parseInt(currentStep, 10) % 5) + 1;
+            setStep(String(nextNum), true);
+          }
+        }, 100);
+      } catch (err) {
+        console.error('BMAS Architecture Blueprint initialization error:', err);
+      }
+    })();
+  </script>
+</body>
+</html>

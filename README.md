@@ -2,6 +2,8 @@
 
 **Bare-Metal HPC & AI Orchestration — Engineered Without the Bloat.**
 
+> **Interactive Architecture Diagram:** [Launch Live L0–L3 Animated Architecture (1440p)](https://proxy80.github.io/bmas-nvl72/)
+
 The **BMAS NVL72 Command Plane** is a unified, voice-activated bare-metal management frontend engineered for **NVIDIA GB200 NVL72 racks** and large-scale HPC clusters. It delivers deterministic job scheduling, direct exporter telemetry (zero Grafana overhead), enterprise zero-trust security, and an embedded, air-gapped AI co-pilot across every infrastructure layer.
 
 ---
