@@ -36,13 +36,29 @@ The **BMAS NVL72 Command Plane** is a unified, voice-activated bare-metal manage
 ## Quick Start (30-Day Evaluation Trial)
 
 1. Download `bmas-nvl72-command-plane-1.0.0-rc1-linux-x86_64.tar.gz` from the **[Releases](https://github.com/proxy80/bmas-nvl72/releases)** tab.
-2. Extract and run the installer in an isolated directory:
+2. Extract the release tarball and prepare a Python virtual environment:
 
+    ```bash
     tar -xzf bmas-nvl72-command-plane-1.0.0-rc1-linux-x86_64.tar.gz
-    cd bmas-nvl72-command-plane-1.0.0-rc1-linux-x86_64
-    sudo ./install.sh
+    cd bmas_nvl72_release_stage
+    python3 -m venv venv && source venv/bin/activate
+    pip install -r requirements.txt
+    ```
 
-3. Follow the interactive prompts to configure mTLS/HTTPS certificates, Slurm 24.11+ REST endpoints, and your SQLite or MariaDB Galera backend.
+3. Run the zero-mutation pre-flight check to verify runtime dependencies, port `8720`, TLS PKI target permissions, and compiled `.so` binary integrity before modifying the host:
+
+    ```bash
+    ./install.sh --dry-run
+    ```
+
+4. Initialize local TLS PKI, the append-only audit database, and your admin passphrase, then launch the Command Plane:
+
+    ```bash
+    ./install.sh
+    ./bmas-nvl72.sh
+    ```
+
+5. Sign in to the Command Plane HUD to connect your Slurm 24.11+ REST endpoints, Prometheus/DCGM exporters, Redfish BMCs, and optional MariaDB Galera HA backend (`BMAS_DB_URL`).
 
 ---
 
