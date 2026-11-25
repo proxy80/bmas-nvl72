@@ -24,6 +24,18 @@ The **BMAS NVL72 Command Plane** is a unified, voice-activated bare-metal manage
 
 ---
 
+## Recommended OX Mini Co-Pilot Models
+
+**OX Mini** is model-agnostic and connects to any OpenAI-compatible `/v1/chat/completions` endpoint via `BMAS_OX_MINI_URL` and `BMAS_OX_MINI_MODEL` (no local LLM weights are bundled or forced during install).
+
+| Deployment Tier | Recommended Models | Notes |
+| :--- | :--- | :--- |
+| **Lab / Single GPU (8–24 GB VRAM)** | `qwen2.5-coder:latest` (tested baseline), `Qwen3.8-27B`, `Gemma 4 26B A4B` | Fast local Ollama/vLLM baseline for Slurm, PromQL, and Redfish diagnostics. |
+| **Enterprise On-Prem (vLLM / TGI)** | `Qwen3-Coder-Next`, `Llama 4 Scout`, `DeepSeek-V4-Flash` | High-concurrency, long-context inference on dedicated on-prem GPU nodes. |
+| **Cloud / Hosted API (Non-Air-Gapped)** | Google Gemini, OpenAI, or enterprise OpenAI-compatible gateway | Drop-in option for non-air-gapped deployments. |
+
+---
+
 ## Minimum Requirements
 
 * **OS:** Enterprise Linux (Rocky Linux 9 / RHEL 9 / Oracle Linux 9) or Ubuntu 22.04 / 24.04 LTS
