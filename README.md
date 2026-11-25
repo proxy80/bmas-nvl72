@@ -26,7 +26,7 @@ The **BMAS NVL72 Command Plane** is a unified, voice-activated bare-metal manage
 
 ## Recommended OX Mini Co-Pilot Models
 
-**OX Mini** is model-agnostic and connects to any OpenAI-compatible `/v1/chat/completions` endpoint via `BMAS_OX_MINI_URL` and `BMAS_OX_MINI_MODEL` (no local LLM weights are bundled or forced during install).
+**OX Mini** is model-agnostic and connects to any OpenAI-compatible `/v1/chat/completions` endpoint via `BMAS_OX_MINI_URL`, `BMAS_OX_MINI_MODEL`, and optional `BMAS_OX_MINI_API_KEY` (Bearer token) (no local LLM weights are bundled or forced during install).
 
 | Deployment Tier | Recommended Models | Notes |
 | :--- | :--- | :--- |
