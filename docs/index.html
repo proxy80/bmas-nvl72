@@ -611,8 +611,8 @@
           <text x="513" y="430" text-anchor="middle" fill="#00e5ff" font-family="JetBrains Mono, monospace" font-size="12" font-weight="800">L3</text>
           <text x="546" y="430" fill="#ffffff" font-size="13" font-weight="700">Embedded AI with Auto-Follow &amp; Voice</text>
           <text x="546" y="449" fill="#a9bddb" font-size="10.5">Context-aware AI embedded across L0–L3; explains live metrics</text>
-          <text x="546" y="467" fill="#00e5ff" font-family="JetBrains Mono, monospace" font-size="9.2">• Auto-Follow Active Layer  • Local Air-Gapped Piper ONNX Voice</text>
-          <text x="546" y="483" fill="#76b900" font-family="JetBrains Mono, monospace" font-size="8.8">STATUS: 100% OFFLINE NEURAL INFERENCE — ZERO CLOUD CALLS</text>
+          <text x="546" y="467" fill="#00e5ff" font-family="JetBrains Mono, monospace" font-size="9.2">• On-Prem LLM API (vLLM/Ollama/TGI)  • Air-Gapped Piper ONNX Voice</text>
+          <text x="546" y="483" fill="#76b900" font-family="JetBrains Mono, monospace" font-size="8.8">STATUS: ON-PREM LLM API OR LOCAL OLLAMA — ZERO CLOUD CALLS</text>
         </g>
 
         <!-- ==================================================================
@@ -878,7 +878,7 @@
             </div>
             <h3 class="text-xs font-bold text-white leading-tight">L3 AI Auto-Follow</h3>
             <p class="text-[10.5px] text-slate-400 mt-1 leading-snug">
-              Embedded AI tracks active layer &amp; runs offline Piper ONNX voice.
+              Connects to on-prem LLM APIs (vLLM/Ollama) &amp; runs offline Piper ONNX voice.
             </p>
           </div>
           <span class="mt-2 text-[9.5px] font-mono-code text-cyan-300">Air-Gapped AI</span>
@@ -969,11 +969,11 @@
             badge: 'STEP 5 / 5 // L3 EMBEDDED AI AUTO-FOLLOW',
             pillClass: 'active-cyan',
             accent: '#00e5ff',
-            caption: 'L3 Embedded AI locks Auto-Follow across L0–L3, interpreting live cluster metrics and activating the local air-gapped Piper ONNX voice engine.',
+            caption: 'L3 Embedded AI locks Auto-Follow across L0–L3, routing inference to your on-prem OpenAI-compatible LLM API (vLLM/Ollama/TGI) with local air-gapped Piper ONNX voice.',
             aiLine1: '"All 18 NVL72 trays optimal. Ready for voice command."',
-            aiLine2: '[Auto-Follow: LOCKED L0–L3] [Piper ONNX: 100% Air-Gapped]',
+            aiLine2: '[On-Prem LLM API: CONNECTED] [Piper ONNX: 100% Air-Gapped]',
             logs: [
-              { tag: 'L3-AI', color: '#00e5ff', msg: 'L3 AI Auto-Follow locked across L0–L3 context | Anomaly score 0.01' },
+              { tag: 'L3-AI', color: '#00e5ff', msg: 'L3 AI Auto-Follow connected to on-prem LLM API (BMAS_OX_MINI_URL) | Anomaly score 0.01' },
               { tag: 'L3-VOICE', color: '#76b900', msg: 'Piper ONNX neural voice ready (offline local inference active)' }
             ]
           },

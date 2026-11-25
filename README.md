@@ -13,7 +13,7 @@ The **BMAS NVL72 Command Plane** is a unified, voice-activated bare-metal manage
 * **L0 | Telemetry & Bare-Metal Inventory:** Pulls live cluster health, GPU metrics, and full-staff hardware inventory directly from native scrapers and exporters—no Grafana dependency required.
 * **L1 | Scheduler & Cluster Balancing:** Native **Slurm 24.11+ REST API (`slurmrestd`)** integration for deterministic job orchestration and balanced resource allocation across bare-metal nodes.
 * **L2 | Zero-Trust Security & Enterprise RBAC:** Built-in **mTLS / TLS / HTTPS** installer with automated certificate import, multi-role **RBAC**, **Active Directory** compatibility, and VPN-ready deployment.
-* **L3 | Embedded AI with Auto-Follow & Voice Activation:** Context-aware AI embedded across **L0–L3** with **Auto-Follow**. Understands live metrics, explains every layer as you navigate, and ships with local, air-gapped neural voice activation.
+* **L3 | Embedded AI with Auto-Follow & Voice Activation:** Context-aware AI embedded across **L0–L3** with **Auto-Follow**. Connects directly to your existing **on-prem OpenAI-compatible LLM API** (`vLLM`, `Ollama`, `TGI` via `BMAS_OX_MINI_URL`—no forced local LLM install on the appliance) and pairs with local, air-gapped **Piper ONNX** neural voice activation.
 
 ---
 
@@ -52,7 +52,7 @@ The **BMAS NVL72 Command Plane** is a unified, voice-activated bare-metal manage
     ./install.sh --dry-run
     ```
 
-4. Initialize local TLS PKI, the append-only audit database, and your admin passphrase, then launch the Command Plane:
+4. Initialize local TLS PKI, the append-only audit database, your admin passphrase, and an optional on-prem LLM API endpoint (`BMAS_OX_MINI_URL`), then launch the Command Plane:
 
     ```bash
     ./install.sh
