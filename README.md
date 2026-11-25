@@ -36,12 +36,13 @@ The **BMAS NVL72 Command Plane** is a unified, voice-activated bare-metal manage
 ## Quick Start (30-Day Evaluation Trial)
 
 1. Download `bmas-nvl72-command-plane-1.0.0-rc1-linux-x86_64.tar.gz` from the **[Releases](https://github.com/proxy80/bmas-nvl72/releases)** tab.
-2. Extract the release tarball and prepare a Python virtual environment:
+2. Extract the release tarball and prepare a **Python 3.12** virtual environment (on RHEL/Rocky/Oracle Linux 9, install `python3.12` first via `sudo dnf install -y python3.12`):
 
     ```bash
     tar -xzf bmas-nvl72-command-plane-1.0.0-rc1-linux-x86_64.tar.gz
     cd bmas_nvl72_release_stage
-    python3 -m venv venv && source venv/bin/activate
+    python3.12 -m venv venv && source venv/bin/activate
+    pip install --upgrade pip
     pip install -r requirements.txt
     ```
 
