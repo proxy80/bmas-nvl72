@@ -1,0 +1,2151 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BMAS NVL72 Command Plane — ACME Rocket Company: Database Capacity, Galera Failover &amp; 180-Day Query Architecture</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Fonts: Inter + JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+          colors: {
+            void: '#070b14',
+            panel: '#0f172a',
+            panelLight: '#131f38',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    :root {
+      --bg-void: #070b14;
+      --bg-panel: #0f172a;
+      --cyan: #38bdf8;
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+      --violet: #a855f7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-void);
+      color: #e2e8f0;
+      font-family: 'Inter', system-ui, sans-serif;
+      overflow-x: hidden;
+    }
+
+    /* Subtle mission-control dot/grid backdrop */
+    .bg-grid-pattern {
+      background-image:
+        radial-gradient(circle at 18% 18%, rgba(56, 189, 248, 0.065) 0%, transparent 45%),
+        radial-gradient(circle at 82% 82%, rgba(168, 85, 247, 0.055) 0%, transparent 45%),
+        linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+    }
+
+    /* Flowing SVG dashed line animations */
+    @keyframes dashFlow {
+      from { stroke-dashoffset: 48; }
+      to { stroke-dashoffset: 0; }
+    }
+
+    @keyframes dashFlowFast {
+      from { stroke-dashoffset: 48; }
+      to { stroke-dashoffset: 0; }
+    }
+
+    @keyframes dashFlowReverse {
+      from { stroke-dashoffset: 0; }
+      to { stroke-dashoffset: 48; }
+    }
+
+    .flow-line {
+      stroke-dasharray: 8 8;
+      animation: dashFlow 1.8s linear infinite;
+      transition: stroke 0.4s ease, opacity 0.4s ease, stroke-width 0.4s ease;
+    }
+
+    .flow-line-fast {
+      stroke-dasharray: 10 6;
+      animation: dashFlowFast 0.72s linear infinite;
+      transition: stroke 0.4s ease, opacity 0.4s ease;
+    }
+
+    .flow-line-reverse {
+      stroke-dasharray: 7 7;
+      animation: dashFlowReverse 1.35s linear infinite;
+      transition: stroke 0.4s ease, opacity 0.4s ease;
+    }
+
+    .flow-line-dim {
+      stroke-dasharray: 4 8;
+      animation: none;
+      opacity: 0.14 !important;
+      transition: opacity 0.4s ease;
+    }
+
+    .flow-line-broken {
+      stroke-dasharray: 3 7;
+      animation: none;
+      stroke: #f43f5e !important;
+      opacity: 0.42 !important;
+    }
+
+    /* Pulse animations for alert & healthy states */
+    @keyframes pulseDanger {
+      0%, 100% { filter: drop-shadow(0 0 6px rgba(244, 63, 94, 0.5)); stroke: #f43f5e; }
+      50% { filter: drop-shadow(0 0 18px rgba(244, 63, 94, 0.95)); stroke: #fda4af; }
+    }
+
+    @keyframes pulseAmber {
+      0%, 100% { filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.4)); stroke: #f59e0b; }
+      50% { filter: drop-shadow(0 0 15px rgba(245, 158, 11, 0.9)); stroke: #fcd34d; }
+    }
+
+    @keyframes pulseEmerald {
+      0%, 100% { filter: drop-shadow(0 0 5px rgba(16, 185, 129, 0.35)); }
+      50% { filter: drop-shadow(0 0 14px rgba(16, 185, 129, 0.85)); }
+    }
+
+    @keyframes pulseCyan {
+      0%, 100% { filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.35)); }
+      50% { filter: drop-shadow(0 0 14px rgba(56, 189, 248, 0.85)); }
+    }
+
+    @keyframes ledBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    .node-danger {
+      animation: pulseDanger 1.1s ease-in-out infinite;
+    }
+
+    .node-amber-glow {
+      animation: pulseAmber 1.5s ease-in-out infinite;
+    }
+
+    .node-emerald-glow {
+      animation: pulseEmerald 2.2s ease-in-out infinite;
+    }
+
+    .node-cyan-glow {
+      animation: pulseCyan 2.2s ease-in-out infinite;
+    }
+
+    .led-pulse {
+      animation: ledBlink 1.4s ease-in-out infinite;
+    }
+
+    .node-dimmed {
+      opacity: 0.35;
+      transition: opacity 0.4s ease;
+    }
+
+    .node-active {
+      opacity: 1;
+      transition: opacity 0.4s ease;
+    }
+
+    /* Smooth bar transitions */
+    .cap-bar-fill {
+      transition: width 0.65s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.35s ease;
+    }
+
+    /* Custom sleek scrollbars */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #070b14;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+
+    /* Print / PDF Export Protection */
+    @media print {
+      @page {
+        size: landscape;
+        margin: 8mm;
+      }
+      html, body {
+        background: #070b14 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        height: auto !important;
+        overflow: visible !important;
+      }
+      svg, .svg-card, .telemetry-card, .terminal-box, .query-panel, .comparison-box {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-grid-pattern min-h-screen lg:h-screen lg:overflow-hidden flex flex-col justify-between select-none">
+
+  <!-- =====================================================================
+       TOP HEADER BAR: BRANDING, 6-STAGE STEPPER & PLATFORM SELECTOR
+  ====================================================================== -->
+  <header class="w-full border-b border-slate-800/90 bg-[#0a101f]/95 backdrop-blur-md px-4 py-2 flex flex-col gap-2 shrink-0 z-20">
+    <!-- Row 1: Brand Badge, Title & Platform Selector -->
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="flex flex-col">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wider uppercase bg-sky-500/15 text-sky-300 border border-sky-400/35">
+            <span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span>
+            BARE METAL APPLIED SCIENCE LLC • BMAS NVL72 COMMAND PLANE v1.0.0-rc3
+          </span>
+          <span id="liveStageChip" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            AUTO-CYCLE • 7.0s
+          </span>
+        </div>
+        <h1 class="text-sm sm:text-base xl:text-lg 2xl:text-xl font-extrabold tracking-tight text-white mt-0.5 leading-tight">
+          ACME Rocket Company — Database Capacity, Galera Failover &amp; 180-Day Query Architecture
+        </h1>
+      </div>
+
+      <!-- Platform Selector Pills -->
+      <div class="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80 no-print" role="group" aria-label="Hardware Platform Selector">
+        <span class="text-[10px] font-mono uppercase tracking-wider text-slate-400 px-2 hidden sm:inline">Platform:</span>
+        <button data-platform="gb200" class="platform-btn px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold transition-all bg-sky-500/20 text-sky-300 border border-sky-400/50 shadow-sm cursor-pointer">
+          GB200 NVL72
+        </button>
+        <button data-platform="gb300" class="platform-btn px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold transition-all text-slate-400 hover:text-slate-200 border border-transparent cursor-pointer">
+          GB300 NVL72
+        </button>
+        <button data-platform="hgx" class="platform-btn px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold transition-all text-slate-400 hover:text-slate-200 border border-transparent cursor-pointer">
+          H100 / B200 Pod
+        </button>
+      </div>
+    </div>
+
+    <!-- Row 2: Playback Controls, 6 Clickable Layer Stepper Pills & Cycle Timer -->
+    <div class="flex flex-wrap items-center justify-between gap-2 no-print">
+      <!-- Playback Buttons -->
+      <div class="flex items-center gap-1.5">
+        <button id="btnPlayPause" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 transition-all cursor-pointer" title="Toggle Auto-Play (Space)">
+          <span id="playPauseIcon">❚❚</span>
+          <span id="playPauseText">PAUSE</span>
+        </button>
+        <button id="btnPrev" class="px-2 py-1 rounded-lg text-[11px] font-mono font-semibold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer" title="Previous Layer (Left Arrow)">
+          ◀ PREV
+        </button>
+        <button id="btnNext" class="px-2 py-1 rounded-lg text-[11px] font-mono font-semibold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer" title="Next Layer (Right Arrow)">
+          NEXT ▶
+        </button>
+      </div>
+
+      <!-- 6 Layer Pills -->
+      <div class="flex flex-wrap items-center gap-1 flex-1 justify-center" id="layerButtons">
+        <button data-layer="0" class="layer-btn px-2 py-1 rounded-lg text-[10.5px] font-mono font-semibold border transition-all cursor-pointer">
+          L1 • Edge SQLite (4R)
+        </button>
+        <button data-layer="1" class="layer-btn px-2 py-1 rounded-lg text-[10.5px] font-mono font-semibold border transition-all cursor-pointer">
+          L2 • SQLite Lock Wall (46R)
+        </button>
+        <button data-layer="2" class="layer-btn px-2 py-1 rounded-lg text-[10.5px] font-mono font-semibold border transition-all cursor-pointer">
+          L3 • Galera HA (100R)
+        </button>
+        <button data-layer="3" class="layer-btn px-2 py-1 rounded-lg text-[10.5px] font-mono font-semibold border transition-all cursor-pointer">
+          L4 • 3-Bus Separation
+        </button>
+        <button data-layer="4" class="layer-btn px-2 py-1 rounded-lg text-[10.5px] font-mono font-semibold border transition-all cursor-pointer">
+          L5 • Galera Failover
+        </button>
+        <button data-layer="5" class="layer-btn px-2 py-1 rounded-lg text-[10.5px] font-mono font-semibold border transition-all cursor-pointer">
+          L6 • 150R &amp; 180d Query
+        </button>
+      </div>
+
+      <!-- Cycle Progress Bar -->
+      <div class="hidden xl:flex items-center gap-2 min-w-[132px]">
+        <span id="timerLabel" class="text-[10px] font-mono text-slate-400 w-8 text-right">7.0s</span>
+        <div class="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700/70">
+          <div id="cycleProgressBar" class="h-full bg-gradient-to-r from-sky-400 to-emerald-400 rounded-full" style="width: 0%;"></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- =====================================================================
+       MAIN WORKSPACE (1440p LANDSCAPE 16:9): 8 COLS SVG | 4 COLS SIDEBAR
+  ====================================================================== -->
+  <main class="flex-1 w-full max-w-[2560px] mx-auto px-3 sm:px-4 py-2 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-y-auto lg:overflow-hidden">
+
+    <!-- LEFT / CENTER PANEL (8 of 12 cols ~ 66.7%): ANIMATED SVG TOPOLOGY -->
+    <section class="svg-card lg:col-span-8 bg-[#0b1222]/92 border border-slate-800/90 rounded-2xl p-2.5 flex flex-col min-h-[420px] lg:min-h-0 shadow-2xl relative overflow-hidden">
+      <!-- Top Canvas Status Strip -->
+      <div class="flex flex-wrap items-center justify-between gap-2 pb-2 mb-1 border-b border-slate-800/80 px-1 shrink-0">
+        <div class="flex items-center gap-2">
+          <span id="svgStageBadge" class="px-2 py-0.5 rounded-md text-[10.5px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+            LAYER 1 OF 6
+          </span>
+          <h2 id="svgStageTitle" class="text-xs sm:text-sm font-bold text-slate-100 tracking-tight">
+            L1: Edge Standalone Mode (SQLite Local | 4 Racks)
+          </h2>
+        </div>
+
+        <!-- Bus Color Legend -->
+        <div class="flex flex-wrap items-center gap-2.5 text-[10px] font-mono text-slate-400">
+          <span class="inline-flex items-center gap-1"><span class="w-2.5 h-1 rounded-full bg-emerald-400"></span>180d SQL</span>
+          <span class="inline-flex items-center gap-1"><span class="w-2.5 h-1 rounded-full bg-purple-400"></span>2s Prom TSDB</span>
+          <span class="inline-flex items-center gap-1"><span class="w-2.5 h-1 rounded-full bg-sky-400"></span>TRAY_COLS Sync</span>
+          <span class="inline-flex items-center gap-1"><span class="w-2.5 h-1 rounded-full bg-amber-400"></span>180d Query Pulse</span>
+          <span class="inline-flex items-center gap-1"><span class="w-2.5 h-1 rounded-full bg-rose-500"></span>Fault / Lock</span>
+        </div>
+      </div>
+
+      <!-- L5 Interactive Failover Scenario Bar (Shows Prominently on L5) -->
+      <div id="failoverControlBar" class="hidden mb-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/95 border border-amber-500/40 flex flex-wrap items-center justify-between gap-2 shrink-0 no-print">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+          <span class="text-[11px] font-mono font-bold text-amber-300 uppercase tracking-wide">L5 Failover Drill:</span>
+          <div class="flex items-center gap-1.5">
+            <button id="btnFailoverSingle" class="px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold border transition-all cursor-pointer bg-amber-500/20 text-amber-200 border-amber-400">
+              A) Single Node Failure (Node 2 Down • 2/3 Quorum)
+            </button>
+            <button id="btnFailoverOutage" class="px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-semibold border transition-all cursor-pointer bg-slate-800 text-slate-300 border-slate-700 hover:border-rose-400/60">
+              B) Full Galera Outage (0/3 Quorum • SQLite Fallback)
+            </button>
+          </div>
+        </div>
+        <button id="btnSimulateRecovery" class="hidden px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/50 transition-all cursor-pointer">
+          ↻ SIMULATE RECOVERY (DELTA RESYNC)
+        </button>
+      </div>
+
+      <!-- Main Responsive SVG Canvas -->
+      <div class="flex-1 w-full min-h-0 flex items-center justify-center relative">
+        <svg id="archSvg" viewBox="0 0 1120 620" preserveAspectRatio="xMidYMid meet" class="w-full h-full max-h-full">
+          <defs>
+            <!-- Soft Glow Filters -->
+            <filter id="glowCyan" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+            <filter id="glowEmerald" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+            <filter id="glowRose" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="5" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+            <filter id="glowViolet" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+            <filter id="glowAmber" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="5" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+
+            <!-- Card Gradients -->
+            <linearGradient id="gradPanel" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#131f38" />
+              <stop offset="100%" stop-color="#0b1325" />
+            </linearGradient>
+            <linearGradient id="gradGateway" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#0f2537" />
+              <stop offset="100%" stop-color="#0b1528" />
+            </linearGradient>
+            <linearGradient id="gradGalera" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#0d2824" />
+              <stop offset="100%" stop-color="#0a1622" />
+            </linearGradient>
+            <linearGradient id="gradProm" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#1f1638" />
+              <stop offset="100%" stop-color="#0d1226" />
+            </linearGradient>
+          </defs>
+
+          <!-- ===============================================================
+               COLUMN ZONE BACKGROUNDS (3 TIERS)
+          ================================================================ -->
+          <rect x="14" y="14" width="292" height="592" rx="14" fill="#09101f" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="5 5" />
+          <text x="30" y="37" fill="#64748b" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700" letter-spacing="1.2">
+            1. ACME ROCKET COMPUTE FLOOR
+          </text>
+
+          <rect x="384" y="14" width="322" height="592" rx="14" fill="#09101f" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="5 5" />
+          <text x="400" y="37" fill="#38bdf8" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700" letter-spacing="1.2">
+            2. BMAS NVL72 COMMAND PLANE
+          </text>
+
+          <rect x="784" y="14" width="322" height="592" rx="14" fill="#09101f" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="5 5" />
+          <text x="800" y="37" fill="#10b981" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700" letter-spacing="1.2">
+            3. DUAL-MODE STORAGE &amp; TSDB
+          </text>
+
+          <!-- ===============================================================
+               ANIMATED DATA BUS PATHS
+          ================================================================ -->
+          <g id="busLayer">
+            <!-- Inbound Compute Floor -> Gateway -->
+            <path id="pathRacksToGw" d="M 290 156 C 338 156, 344 188, 400 188" fill="none" stroke="#38bdf8" stroke-width="2.5" class="flow-line" />
+            <path id="pathBmcToGw" d="M 290 308 C 340 308, 346 232, 400 232" fill="none" stroke="#f59e0b" stroke-width="2.5" class="flow-line" />
+            <path id="pathSlurmToGw" d="M 290 422 C 344 422, 352 272, 400 272" fill="none" stroke="#10b981" stroke-width="2.5" class="flow-line" />
+
+            <!-- Violet 2s Prometheus Firehose (Bypasses SQL completely) -->
+            <path id="pathPromFirehose" d="M 290 540 C 470 598, 632 598, 800 536" fill="none" stroke="#a855f7" stroke-width="3.2" class="flow-line" />
+            <path id="pathGwToProm" d="M 545 322 C 545 522, 704 522, 800 522" fill="none" stroke="#a855f7" stroke-width="2" class="flow-line" />
+
+            <!-- Relational Primary Write Paths -->
+            <path id="pathGwToSqlite" d="M 690 176 C 742 176, 746 124, 800 124" fill="none" stroke="#10b981" stroke-width="3" class="flow-line" />
+            <path id="pathGwToGalera" d="M 690 230 C 746 230, 748 310, 800 310" fill="none" stroke="#10b981" stroke-width="3" class="flow-line" />
+
+            <!-- 180-Day Query & Ox Mini Direct SQL Path (Amber/Gold pulse) -->
+            <path id="pathQueryToGalera" d="M 690 392 C 746 392, 750 344, 800 344" fill="none" stroke="#f59e0b" stroke-width="2.8" class="flow-line-dim" />
+
+            <!-- core/db_sync.py Delta Sync Paths (Cyan TRAY_COLS Safety Net) -->
+            <path id="pathDeltaToSqlite" d="M 690 494 C 756 494, 748 164, 800 164" fill="none" stroke="#38bdf8" stroke-width="2.3" class="flow-line" />
+            <path id="pathDeltaToGalera" d="M 690 516 C 744 516, 752 384, 800 384" fill="none" stroke="#38bdf8" stroke-width="2.3" class="flow-line" />
+
+            <!-- Ox Mini <-> Gateway -->
+            <path id="pathOxToGw" d="M 545 346 L 545 324" fill="none" stroke="#38bdf8" stroke-width="2.2" class="flow-line" />
+
+            <!-- Galera Internal Synchronous wsrep Replication Triangle -->
+            <path id="pathWsrep12" d="M 945 294 L 866 376" fill="none" stroke="#10b981" stroke-width="2.5" class="flow-line" />
+            <path id="pathWsrep23" d="M 886 394 L 1004 394" fill="none" stroke="#10b981" stroke-width="2.5" class="flow-line" />
+            <path id="pathWsrep31" d="M 1024 376 L 945 294" fill="none" stroke="#10b981" stroke-width="2.5" class="flow-line" />
+          </g>
+
+          <!-- ===============================================================
+               COLUMN 1: ACME ROCKET COMPANY COMPUTE FLOOR
+          ================================================================ -->
+          <!-- Node 1A: Compute Floor Racks -->
+          <g id="nodeRacks" class="node-active">
+            <rect x="30" y="54" width="260" height="194" rx="12" fill="url(#gradPanel)" stroke="#334155" stroke-width="1.5" />
+            <circle cx="44" cy="70" r="4" fill="#10b981" class="led-pulse" />
+            <text x="54" y="74" fill="#f8fafc" font-size="11.5" font-weight="700">ACME AI Compute Floor</text>
+            <rect x="206" y="60" width="72" height="20" rx="6" fill="#0ea5e9" fill-opacity="0.18" stroke="#38bdf8" stroke-width="1" />
+            <text id="svgRackCountPill" x="242" y="74" text-anchor="middle" fill="#38bdf8" font-family="JetBrains Mono, monospace" font-size="10" font-weight="700">4 RACKS</text>
+
+            <!-- Mini Rack Silhouettes -->
+            <g transform="translate(44, 88)">
+              <rect x="0" y="0" width="32" height="86" rx="4" fill="#070d1a" stroke="#38bdf8" stroke-width="1.2" />
+              <rect x="4" y="6" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.85" />
+              <rect x="4" y="14" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.7" />
+              <rect x="4" y="22" width="24" height="5" rx="1" fill="#10b981" opacity="0.85" />
+              <rect x="4" y="30" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.7" />
+              <rect x="4" y="38" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.85" />
+              <rect x="4" y="46" width="24" height="5" rx="1" fill="#a855f7" opacity="0.85" />
+              <rect x="4" y="54" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.7" />
+              <rect x="4" y="62" width="24" height="5" rx="1" fill="#10b981" opacity="0.85" />
+              <rect x="4" y="72" width="24" height="8" rx="1.5" fill="#1e293b" />
+
+              <rect x="39" y="0" width="32" height="86" rx="4" fill="#070d1a" stroke="#38bdf8" stroke-width="1.2" />
+              <rect x="43" y="6" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.8" />
+              <rect x="43" y="14" width="24" height="5" rx="1" fill="#10b981" opacity="0.85" />
+              <rect x="43" y="22" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.75" />
+              <rect x="43" y="30" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.85" />
+              <rect x="43" y="38" width="24" height="5" rx="1" fill="#a855f7" opacity="0.85" />
+              <rect x="43" y="46" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.7" />
+              <rect x="43" y="54" width="24" height="5" rx="1" fill="#10b981" opacity="0.85" />
+              <rect x="43" y="62" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.7" />
+              <rect x="43" y="72" width="24" height="8" rx="1.5" fill="#1e293b" />
+
+              <rect x="78" y="0" width="32" height="86" rx="4" fill="#070d1a" stroke="#38bdf8" stroke-width="1.2" />
+              <rect x="82" y="6" width="24" height="5" rx="1" fill="#10b981" opacity="0.85" />
+              <rect x="82" y="14" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.7" />
+              <rect x="82" y="22" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.85" />
+              <rect x="82" y="30" width="24" height="5" rx="1" fill="#a855f7" opacity="0.85" />
+              <rect x="82" y="38" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.75" />
+              <rect x="82" y="46" width="24" height="5" rx="1" fill="#10b981" opacity="0.85" />
+              <rect x="82" y="54" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.7" />
+              <rect x="82" y="62" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.85" />
+              <rect x="82" y="72" width="24" height="8" rx="1.5" fill="#1e293b" />
+
+              <rect x="117" y="0" width="32" height="86" rx="4" fill="#070d1a" stroke="#38bdf8" stroke-width="1.2" />
+              <rect x="121" y="6" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.85" />
+              <rect x="121" y="14" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.7" />
+              <rect x="121" y="22" width="24" height="5" rx="1" fill="#a855f7" opacity="0.85" />
+              <rect x="121" y="30" width="24" height="5" rx="1" fill="#10b981" opacity="0.85" />
+              <rect x="121" y="38" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.7" />
+              <rect x="121" y="46" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.85" />
+              <rect x="121" y="54" width="24" height="5" rx="1" fill="#10b981" opacity="0.85" />
+              <rect x="121" y="62" width="24" height="5" rx="1" fill="#38bdf8" opacity="0.7" />
+              <rect x="121" y="72" width="24" height="8" rx="1.5" fill="#1e293b" />
+
+              <rect x="156" y="0" width="76" height="86" rx="6" fill="#070d1a" stroke="#334155" stroke-width="1.2" stroke-dasharray="4 3" />
+              <text id="svgRackExpNum" x="194" y="34" text-anchor="middle" fill="#38bdf8" font-family="JetBrains Mono, monospace" font-size="15.5" font-weight="800">288</text>
+              <text x="194" y="49" text-anchor="middle" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="8.8" font-weight="600">TOTAL GPUs</text>
+              <text id="svgRackPowerLabel" x="194" y="68" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono, monospace" font-size="9.5" font-weight="700">0.48 MW</text>
+            </g>
+
+            <text id="svgFloorSubtext" x="44" y="196" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="10">
+              72 Compute Trays • GB200 NVL72
+            </text>
+            <rect x="44" y="208" width="232" height="24" rx="6" fill="#070d1a" stroke="#1e293b" />
+            <text id="svgFloorPhaseBadge" x="160" y="224" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono, monospace" font-size="9.8" font-weight="700">
+              EDGE STANDALONE / LAB FOOTPRINT
+            </text>
+          </g>
+
+          <!-- Node 1B: Redfish OOB BMC Aggregator -->
+          <g id="nodeBmc" class="node-active">
+            <rect x="30" y="262" width="260" height="94" rx="12" fill="url(#gradPanel)" stroke="#f59e0b" stroke-opacity="0.55" stroke-width="1.5" />
+            <circle cx="44" cy="279" r="3.8" fill="#f59e0b" class="led-pulse" />
+            <text x="54" y="283" fill="#fbbf24" font-size="11.5" font-weight="700">Redfish OOB BMC Aggregator</text>
+            <text id="svgBmcCount" x="44" y="303" fill="#e2e8f0" font-family="JetBrains Mono, monospace" font-size="10.2" font-weight="600">
+              72 OOB BMCs + Vertiv CDUs
+            </text>
+            <text x="44" y="321" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="9.2">
+              Power • CDU Flow • Latched Faults
+            </text>
+            <rect x="44" y="331" width="232" height="14" rx="4" fill="#1e293b" />
+            <rect id="svgBmcBar" x="44" y="331" width="38" height="14" rx="4" fill="#f59e0b" />
+            <text id="svgBmcRate" x="270" y="341.5" text-anchor="end" fill="#fef3c7" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">12 writes/s</text>
+          </g>
+
+          <!-- Node 1C: Slurm 24.11 REST -->
+          <g id="nodeSlurm" class="node-active">
+            <rect x="30" y="370" width="260" height="94" rx="12" fill="url(#gradPanel)" stroke="#10b981" stroke-opacity="0.55" stroke-width="1.5" />
+            <circle cx="44" cy="387" r="3.8" fill="#10b981" class="led-pulse" />
+            <text x="54" y="391" fill="#34d399" font-size="11.5" font-weight="700">Slurm 24.11+ REST (slurmrestd)</text>
+            <text x="44" y="411" fill="#e2e8f0" font-family="JetBrains Mono, monospace" font-size="10.2" font-weight="600">
+              State Changes → slurm_job_history
+            </text>
+            <text x="44" y="429" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="9.2">
+              user_name • gpus_requested • raw_json
+            </text>
+            <rect x="44" y="439" width="232" height="14" rx="4" fill="#1e293b" />
+            <rect id="svgSlurmBar" x="44" y="439" width="34" height="14" rx="4" fill="#10b981" />
+            <text id="svgSlurmRate" x="270" y="449.5" text-anchor="end" fill="#d1fae5" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">40 jobs/hr</text>
+          </g>
+
+          <!-- Node 1D: Prometheus / DCGM Exporter -->
+          <g id="nodePromExp" class="node-active">
+            <rect x="30" y="478" width="260" height="110" rx="12" fill="url(#gradProm)" stroke="#a855f7" stroke-opacity="0.75" stroke-width="1.5" />
+            <circle cx="44" cy="495" r="3.8" fill="#a855f7" class="led-pulse" />
+            <text x="54" y="499" fill="#d8b4fe" font-size="11.5" font-weight="700">Prometheus / DCGM Exporter</text>
+            <text x="44" y="518" fill="#e2e8f0" font-family="JetBrains Mono, monospace" font-size="10" font-weight="600">
+              2-Second Real-Time Telemetry Firehose
+            </text>
+            <text x="44" y="535" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="9.2">
+              GPU Thermals • Watts • HBM3e • NVLink
+            </text>
+            <rect x="44" y="549" width="232" height="24" rx="6" fill="#2e1065" stroke="#a855f7" stroke-opacity="0.65" />
+            <text id="svgPromRatePill" x="160" y="565" text-anchor="middle" fill="#f3e8ff" font-family="JetBrains Mono, monospace" font-size="10.2" font-weight="700">
+              1,440 samples/sec (BYPASSES SQL)
+            </text>
+          </g>
+
+          <!-- ===============================================================
+               COLUMN 2: BMAS NVL72 COMMAND PLANE
+          ================================================================ -->
+          <!-- Node 2A: Cython FastAPI Gateway -->
+          <g id="nodeGateway" class="node-active">
+            <rect id="gwCardRect" x="400" y="92" width="290" height="230" rx="14" fill="url(#gradGateway)" stroke="#38bdf8" stroke-width="2" />
+            <rect x="400" y="92" width="290" height="36" rx="14" fill="#0e7490" fill-opacity="0.3" />
+            <circle id="gwLed" cx="418" cy="110" r="4.5" fill="#10b981" class="led-pulse" />
+            <text x="550" y="115" text-anchor="middle" fill="#7dd3fc" font-family="JetBrains Mono, monospace" font-size="12" font-weight="800">
+              CYTHON FASTAPI GATEWAY
+            </text>
+
+            <text x="416" y="148" fill="#e2e8f0" font-family="JetBrains Mono, monospace" font-size="10.2" font-weight="600">
+              core/history_store.so • gateway/*.so
+            </text>
+            <text x="416" y="166" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="9.3">
+              Single-Binary Dual-Mode SQLAlchemy Engine
+            </text>
+
+            <rect x="416" y="178" width="258" height="54" rx="8" fill="#070d1a" stroke="#1e293b" stroke-width="1.2" />
+            <text x="428" y="195" fill="#64748b" font-family="JetBrains Mono, monospace" font-size="8.8" font-weight="700">ACTIVE DATABASE ROUTING:</text>
+            <text id="svgEnvVarText" x="428" y="212" fill="#10b981" font-family="JetBrains Mono, monospace" font-size="9.8" font-weight="700">BMAS_DB_URL = (unset → SQLite)</text>
+            <text id="svgEnvSubText" x="428" y="226" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="8.6">SQLAlchemy + _ensure_galera_schema()</text>
+
+            <rect x="416" y="244" width="124" height="26" rx="6" fill="#0f172a" stroke="#334155" />
+            <text x="478" y="261" text-anchor="middle" fill="#38bdf8" font-family="JetBrains Mono, monospace" font-size="9.3" font-weight="600">record_slurm_jobs()</text>
+
+            <rect x="550" y="244" width="124" height="26" rx="6" fill="#0f172a" stroke="#334155" />
+            <text x="612" y="261" text-anchor="middle" fill="#c084fc" font-family="JetBrains Mono, monospace" font-size="9.3" font-weight="600">180d Auto-Purge</text>
+
+            <rect id="svgGwStatusBox" x="416" y="282" width="258" height="26" rx="6" fill="#064e3b" fill-opacity="0.65" stroke="#10b981" />
+            <text id="svgGwStatusText" x="545" y="299" text-anchor="middle" fill="#6ee7b7" font-family="JetBrains Mono, monospace" font-size="9.8" font-weight="700">
+              STATUS: HEALTHY • ZERO DROPPED WRITES
+            </text>
+          </g>
+
+          <!-- Node 2B: Ox Mini Sovereign AI & 180-Day Query Engine -->
+          <g id="nodeOxMini" class="node-active">
+            <rect id="oxCardRect" x="400" y="344" width="290" height="96" rx="12" fill="url(#gradPanel)" stroke="#38bdf8" stroke-opacity="0.65" stroke-width="1.6" />
+            <circle id="oxLed" cx="416" cy="361" r="3.8" fill="#38bdf8" class="led-pulse" />
+            <text x="426" y="365" fill="#38bdf8" font-size="11.5" font-weight="700">Ox Mini AI &amp; 180-Day Query Engine</text>
+            <text x="416" y="384" fill="#cbd5e1" font-family="JetBrains Mono, monospace" font-size="9.6">
+              Air-Gapped Belle ONNX Voice • L0–L3 HUD
+            </text>
+            <text x="416" y="401" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="9.1">
+              Queries Galera SQL Directly (0% Prom Impact)
+            </text>
+            <rect id="svgOxBadgeBox" x="416" y="411" width="258" height="20" rx="5" fill="#0c4a6e" fill-opacity="0.6" stroke="#38bdf8" stroke-opacity="0.55" />
+            <text id="svgOxBadgeText" x="545" y="425" text-anchor="middle" fill="#bae6fd" font-family="JetBrains Mono, monospace" font-size="9.3" font-weight="700">
+              AI DIAGNOSTICS: READY (SINGLE OPERATOR)
+            </text>
+          </g>
+
+          <!-- Node 2C: core/db_sync.py Delta Sync Worker -->
+          <g id="nodeDeltaWorker" class="node-active">
+            <rect id="deltaCardRect" x="400" y="460" width="290" height="104" rx="12" fill="url(#gradPanel)" stroke="#38bdf8" stroke-opacity="0.65" stroke-width="1.6" />
+            <circle id="deltaLed" cx="416" cy="477" r="3.8" fill="#38bdf8" class="led-pulse" />
+            <text x="426" y="481" fill="#38bdf8" font-size="11.5" font-weight="700">core/db_sync.py Delta Sync Worker</text>
+            <text x="416" y="500" fill="#e2e8f0" font-family="JetBrains Mono, monospace" font-size="9.6" font-weight="600">
+              Hardware Safety Net (TRAY_COLS Only)
+            </text>
+            <text x="416" y="517" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="9.1">
+              Mirrors BMC/CDU State • Auto-Resync on Recovery
+            </text>
+            <rect id="svgDeltaBadgeBox" x="416" y="529" width="258" height="22" rx="5" fill="#083344" stroke="#38bdf8" stroke-opacity="0.6" />
+            <text id="svgDeltaBadgeText" x="545" y="544" text-anchor="middle" fill="#a5f3fc" font-family="JetBrains Mono, monospace" font-size="9.3" font-weight="700">
+              STANDBY (SINGLE-NODE SQLITE MODE)
+            </text>
+          </g>
+
+          <!-- ===============================================================
+               COLUMN 3: DUAL-MODE STORAGE & TSDB TIER
+          ================================================================ -->
+          <!-- Node 3A: Local SQLite Edge Engine -->
+          <g id="nodeSqlite" class="node-active">
+            <rect id="sqliteCardRect" x="800" y="54" width="290" height="154" rx="12" fill="url(#gradPanel)" stroke="#10b981" stroke-width="2" />
+            <circle id="sqliteLed" cx="816" cy="70" r="4" fill="#10b981" class="led-pulse" />
+            <text x="826" y="74" fill="#f8fafc" font-size="12" font-weight="700">Local SQLite Edge Engine</text>
+            <text x="816" y="92" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="9.4">
+              data/bmas_nvl72.db • Single-Writer Lock
+            </text>
+
+            <rect id="sqliteRoleBox" x="816" y="101" width="258" height="22" rx="5" fill="#064e3b" stroke="#10b981" />
+            <text id="sqliteRoleText" x="945" y="116" text-anchor="middle" fill="#6ee7b7" font-family="JetBrains Mono, monospace" font-size="9.6" font-weight="700">
+              ACTIVE PRIMARY (ZERO-CONFIG EDGE)
+            </text>
+
+            <text x="816" y="141" fill="#cbd5e1" font-family="JetBrains Mono, monospace" font-size="9.4" font-weight="600">Write-Lock Utilization:</text>
+            <text id="svgSqlitePct" x="1074" y="141" text-anchor="end" fill="#10b981" font-family="JetBrains Mono, monospace" font-size="10.5" font-weight="800">14%</text>
+            <rect x="816" y="148" width="258" height="12" rx="4" fill="#1e293b" />
+            <rect id="svgSqliteBar" x="816" y="148" width="36" height="12" rx="4" fill="#10b981" />
+
+            <rect id="sqliteAlertBox" x="816" y="169" width="258" height="26" rx="6" fill="#0f172a" stroke="#334155" />
+            <text id="sqliteAlertText" x="945" y="186" text-anchor="middle" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="9.3" font-weight="700">
+              ~0.8 GB / 180d • Comfortable (1–8 Racks)
+            </text>
+          </g>
+
+          <!-- Node 3B: 3-Node MariaDB Galera Cluster -->
+          <g id="nodeGalera" class="node-dimmed">
+            <rect id="galeraCardRect" x="800" y="222" width="290" height="240" rx="12" fill="url(#gradGalera)" stroke="#10b981" stroke-width="2" />
+            <circle id="galeraMasterLed" cx="816" cy="238" r="4" fill="#64748b" />
+            <text x="826" y="242" fill="#f8fafc" font-size="11.8" font-weight="700">3-Node MariaDB Galera Cluster</text>
+            <text x="816" y="258" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="8.8">
+              6-Blade Synergy Frame • Sync wsrep Quorum
+            </text>
+
+            <!-- Galera Node 1 (Top) -->
+            <g id="galeraNode1" transform="translate(888, 268)">
+              <rect id="gNode1Rect" x="0" y="0" width="114" height="36" rx="7" fill="#064e3b" stroke="#34d399" stroke-width="1.5" />
+              <circle id="gNode1Led" cx="12" cy="13" r="3.5" fill="#10b981" />
+              <text x="62" y="16" text-anchor="middle" fill="#ecfdf5" font-family="JetBrains Mono, monospace" font-size="9.5" font-weight="700">galera-node1</text>
+              <text id="gNode1Sub" x="57" y="29" text-anchor="middle" fill="#6ee7b7" font-family="JetBrains Mono, monospace" font-size="7.8">PRIMARY :3306</text>
+            </g>
+
+            <!-- Galera Node 2 (Bottom Left) -->
+            <g id="galeraNode2" transform="translate(812, 366)">
+              <rect id="gNode2Rect" x="0" y="0" width="110" height="36" rx="7" fill="#064e3b" stroke="#34d399" stroke-width="1.5" />
+              <circle id="gNode2Led" cx="12" cy="13" r="3.5" fill="#10b981" />
+              <text x="60" y="16" text-anchor="middle" fill="#ecfdf5" font-family="JetBrains Mono, monospace" font-size="9.5" font-weight="700">galera-node2</text>
+              <text id="gNode2Sub" x="55" y="29" text-anchor="middle" fill="#6ee7b7" font-family="JetBrains Mono, monospace" font-size="7.8">SYNC REPLICA</text>
+            </g>
+
+            <!-- Galera Node 3 (Bottom Right) -->
+            <g id="galeraNode3" transform="translate(968, 366)">
+              <rect id="gNode3Rect" x="0" y="0" width="110" height="36" rx="7" fill="#064e3b" stroke="#34d399" stroke-width="1.5" />
+              <circle id="gNode3Led" cx="12" cy="13" r="3.5" fill="#10b981" />
+              <text x="60" y="16" text-anchor="middle" fill="#ecfdf5" font-family="JetBrains Mono, monospace" font-size="9.5" font-weight="700">galera-node3</text>
+              <text id="gNode3Sub" x="55" y="29" text-anchor="middle" fill="#6ee7b7" font-family="JetBrains Mono, monospace" font-size="7.8">SYNC REPLICA</text>
+            </g>
+
+            <!-- Quorum Center Pill -->
+            <rect id="quorumPillRect" x="900" y="326" width="90" height="20" rx="10" fill="#022c22" stroke="#10b981" stroke-width="1.2" />
+            <text id="quorumPillText" x="945" y="339.5" text-anchor="middle" fill="#34d399" font-family="JetBrains Mono, monospace" font-size="8.6" font-weight="800">3/3 QUORUM</text>
+
+            <!-- Galera Load Meter -->
+            <text x="816" y="422" fill="#cbd5e1" font-family="JetBrains Mono, monospace" font-size="9.4" font-weight="600">Cluster Load:</text>
+            <text id="svgGaleraPct" x="1074" y="422" text-anchor="end" fill="#64748b" font-family="JetBrains Mono, monospace" font-size="10.2" font-weight="800">STANDBY</text>
+            <rect x="816" y="428" width="258" height="10" rx="4" fill="#1e293b" />
+            <rect id="svgGaleraBar" x="816" y="428" width="0" height="10" rx="4" fill="#10b981" />
+
+            <text id="svgGaleraFoot" x="945" y="453" text-anchor="middle" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="8.8" font-weight="600">
+              Optional HA Expansion (10–150+ Racks)
+            </text>
+          </g>
+
+          <!-- Node 3C: Prometheus TSDB -->
+          <g id="nodePromTsdb" class="node-active">
+            <rect x="800" y="476" width="290" height="112" rx="12" fill="url(#gradProm)" stroke="#a855f7" stroke-width="1.8" />
+            <circle cx="816" cy="493" r="4" fill="#a855f7" class="led-pulse" />
+            <text x="826" y="497" fill="#e9d5ff" font-size="12" font-weight="700">Prometheus TSDB (Time-Series)</text>
+            <text x="816" y="516" fill="#d8b4fe" font-family="JetBrains Mono, monospace" font-size="9.4">
+              High-Speed 2s GPU Telemetry Engine
+            </text>
+            <text x="816" y="534" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="9.1">
+              Unaffected by SQL Load or Galera Outages
+            </text>
+            <rect x="816" y="548" width="258" height="26" rx="6" fill="#2e1065" stroke="#a855f7" stroke-opacity="0.75" />
+            <text id="svgPromTsdbStatus" x="945" y="565" text-anchor="middle" fill="#f3e8ff" font-family="JetBrains Mono, monospace" font-size="9.8" font-weight="700">
+              LIVE STREAMING • 0% SQL OVERHEAD
+            </text>
+          </g>
+
+          <!-- ===============================================================
+               DYNAMIC 60FPS FLOATING ORBS LAYER
+          ================================================================ -->
+          <g id="packetLayer"></g>
+          <g id="queryPulseLayer"></g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- RIGHT SIDEBAR (4 of 12 cols ~ 33.3%): TELEMETRY, TERMINAL & 180-DAY QUERY -->
+    <aside class="telemetry-card lg:col-span-4 flex flex-col gap-2 min-h-0">
+
+      <!-- Card 1: Stage Narrative -->
+      <div class="bg-[#0f172a]/95 border border-slate-800 rounded-2xl p-2.5 shadow-lg shrink-0">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <span id="sideStagePill" class="text-[9.5px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/35">
+            STAGE 1 • EDGE MODE
+          </span>
+          <span id="sidePlatformTag" class="text-[10px] font-mono text-sky-300 font-semibold">
+            GB200 NVL72 (72 GPUs/Rack)
+          </span>
+        </div>
+        <h3 id="sideStageHeading" class="text-xs sm:text-sm font-bold text-white leading-snug">
+          Edge Standalone — Zero-Config SQLite Primary
+        </h3>
+        <p id="sideStageDesc" class="text-[11px] text-slate-300 leading-relaxed mt-1">
+          Zero-config SQLite handles 1–8 racks smoothly with low write contention and 180-day auto-purge.
+        </p>
+      </div>
+
+      <!-- Card 2: 6-Cell Live KPI Grid -->
+      <div class="grid grid-cols-3 gap-1.5 shrink-0">
+        <div class="bg-[#0f172a]/95 border border-slate-800 rounded-xl p-2">
+          <div class="text-[9px] font-mono uppercase text-slate-400">Active Racks</div>
+          <div id="kpiRacks" class="text-sm xl:text-base font-mono font-extrabold text-sky-300">4</div>
+        </div>
+        <div class="bg-[#0f172a]/95 border border-slate-800 rounded-xl p-2">
+          <div class="text-[9px] font-mono uppercase text-slate-400">Compute Trays</div>
+          <div id="kpiTrays" class="text-sm xl:text-base font-mono font-extrabold text-white">72</div>
+        </div>
+        <div class="bg-[#0f172a]/95 border border-slate-800 rounded-xl p-2">
+          <div class="text-[9px] font-mono uppercase text-slate-400">Total GPUs</div>
+          <div id="kpiGpus" class="text-sm xl:text-base font-mono font-extrabold text-emerald-300">288</div>
+        </div>
+        <div class="bg-[#0f172a]/95 border border-slate-800 rounded-xl p-2">
+          <div class="text-[9px] font-mono uppercase text-slate-400">OOB BMCs</div>
+          <div id="kpiBmcs" class="text-sm xl:text-base font-mono font-extrabold text-amber-300">72</div>
+        </div>
+        <div class="bg-[#0f172a]/95 border border-slate-800 rounded-xl p-2">
+          <div class="text-[9px] font-mono uppercase text-slate-400">Primary DB</div>
+          <div id="kpiDb" class="text-[11px] xl:text-xs font-mono font-extrabold text-emerald-400 mt-0.5 truncate">SQLite</div>
+        </div>
+        <div class="bg-[#0f172a]/95 border border-slate-800 rounded-xl p-2">
+          <div class="text-[9px] font-mono uppercase text-slate-400">180d Storage</div>
+          <div id="kpiStorage" class="text-xs xl:text-sm font-mono font-extrabold text-purple-300 mt-0.5">~0.8 GB</div>
+        </div>
+      </div>
+
+      <!-- Card 3: 3 Animated Capacity Bars -->
+      <div class="bg-[#0f172a]/95 border border-slate-800 rounded-2xl p-2.5 flex flex-col gap-2 shrink-0">
+        <div>
+          <div class="flex justify-between items-center text-[10.5px] font-mono mb-0.5">
+            <span class="text-slate-300">SQLite Write-Lock</span>
+            <span id="barSqliteLabel" class="font-bold text-emerald-400">14% • HEALTHY</span>
+          </div>
+          <div class="w-full h-2 bg-slate-800/90 rounded-full overflow-hidden border border-slate-700/60">
+            <div id="barSqliteFill" class="cap-bar-fill h-full bg-emerald-500 rounded-full" style="width: 14%;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center text-[10.5px] font-mono mb-0.5">
+            <span class="text-slate-300">3-Node MariaDB Galera</span>
+            <span id="barGaleraLabel" class="font-bold text-slate-500">0% • STANDBY</span>
+          </div>
+          <div class="w-full h-2 bg-slate-800/90 rounded-full overflow-hidden border border-slate-700/60">
+            <div id="barGaleraFill" class="cap-bar-fill h-full bg-emerald-500 rounded-full" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center text-[10.5px] font-mono mb-0.5">
+            <span class="text-slate-300">Prometheus 2s Firehose</span>
+            <span id="barPromLabel" class="font-bold text-purple-300">1,440 samples/s</span>
+          </div>
+          <div class="w-full h-2 bg-slate-800/90 rounded-full overflow-hidden border border-slate-700/60">
+            <div id="barPromFill" class="cap-bar-fill h-full bg-purple-500 rounded-full" style="width: 12%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4: Tabbed Lower Panel — [Terminal Telemetry] vs [180-Day Query & Ox Mini] -->
+      <div class="bg-[#0f172a]/95 border border-slate-800 rounded-2xl flex-1 flex flex-col min-h-[220px] overflow-hidden shadow-lg">
+        <!-- macOS-style Window Chrome + Tab Switcher -->
+        <div class="flex items-center justify-between px-3 py-1.5 bg-[#090f1d] border-b border-slate-800 shrink-0">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500/90"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-400/90"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400/90"></span>
+            <span class="ml-1.5 text-[10px] font-mono text-slate-400 hidden sm:inline">bmas-console</span>
+          </div>
+          <div class="flex items-center gap-1 no-print">
+            <button id="tabTerminalBtn" class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition-all cursor-pointer bg-sky-500/20 text-sky-300 border border-sky-400/40">
+              TERMINAL LOG
+            </button>
+            <button id="tabQueryBtn" class="px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold transition-all cursor-pointer text-slate-400 hover:text-amber-300 border border-transparent">
+              180-DAY QUERY &amp; OX MINI
+            </button>
+          </div>
+        </div>
+
+        <!-- TAB 1: macOS Dark Terminal Telemetry Readout -->
+        <div id="panelTerminal" class="terminal-box flex-1 p-2.5 flex flex-col justify-between min-h-0 overflow-hidden">
+          <div id="terminalOutput" class="font-mono text-[10.5px] leading-relaxed text-slate-300 overflow-y-auto space-y-1 pr-1 flex-1">
+            <!-- Populated dynamically by JS -->
+          </div>
+          <!-- Compact Sizing Summary Footer inside Terminal Tab -->
+          <div class="mt-2 pt-1.5 border-t border-slate-800/90 flex items-center justify-between text-[9.5px] font-mono text-slate-400 shrink-0">
+            <span>Edge SQLite: <strong class="text-sky-300">1–8 Racks</strong></span>
+            <span>3× Galera HA: <strong class="text-emerald-300">10–150+ Racks</strong></span>
+            <span>Retention: <strong class="text-purple-300">180d</strong></span>
+          </div>
+        </div>
+
+        <!-- TAB 2: Interactive 180-Day Query & Ox Mini Diagnostic Panel -->
+        <div id="panelQuery" class="query-panel hidden flex-1 p-2.5 flex-col gap-2 min-h-0 overflow-hidden">
+          <!-- Query Controls Row -->
+          <div class="flex flex-wrap items-center gap-1.5 shrink-0 no-print">
+            <select id="queryRackSelect" class="bg-slate-900 border border-slate-700 text-slate-200 text-[10px] font-mono rounded-lg px-2 py-1 focus:outline-none focus:border-sky-400">
+              <option value="ALL">ALL RACKS</option>
+              <option value="ACME-RACK-01">ACME-RACK-01</option>
+              <option value="ACME-RACK-46">ACME-RACK-46</option>
+              <option value="ACME-RACK-150">ACME-RACK-150</option>
+            </select>
+            <select id="queryWindowSelect" class="bg-slate-900 border border-slate-700 text-slate-200 text-[10px] font-mono rounded-lg px-2 py-1 focus:outline-none focus:border-sky-400">
+              <option value="1h">Past 1 Hour</option>
+              <option value="24h">Past 24 Hours</option>
+              <option value="7d" selected>Past 7 Days</option>
+              <option value="180d">Past 180 Days</option>
+            </select>
+            <button id="btnRunQuery" class="ml-auto px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/50 transition-all cursor-pointer">
+              ▶ RUN QUERY
+            </button>
+          </div>
+
+          <!-- Query Route Status -->
+          <div id="queryStatusLine" class="text-[9.5px] font-mono text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-2 py-1 shrink-0">
+            [SQL] Target: MariaDB Galera (slurm_job_history) • 0% Prometheus Bus Impact
+          </div>
+
+          <!-- Realistic slurm_job_history Result Table -->
+          <div class="flex-1 overflow-auto border border-slate-800 rounded-lg bg-[#070b14]">
+            <table class="w-full text-left border-collapse font-mono text-[9px] whitespace-nowrap">
+              <thead class="sticky top-0 bg-slate-900 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="py-1 px-1.5">id</th>
+                  <th class="py-1 px-1.5">recorded_at</th>
+                  <th class="py-1 px-1.5">rack_id</th>
+                  <th class="py-1 px-1.5">job_id</th>
+                  <th class="py-1 px-1.5">job_name</th>
+                  <th class="py-1 px-1.5">user</th>
+                  <th class="py-1 px-1.5">partition</th>
+                  <th class="py-1 px-1.5">state</th>
+                  <th class="py-1 px-1.5 text-right">gpus</th>
+                </tr>
+              </thead>
+              <tbody id="queryTableBody" class="divide-y divide-slate-800/70 text-slate-200">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Ox Mini AI Diagnostic Summary -->
+          <div class="bg-sky-950/40 border border-sky-500/30 rounded-lg p-2 shrink-0">
+            <div class="flex items-center justify-between text-[9.5px] font-mono font-bold text-sky-300 mb-0.5">
+              <span>OX MINI AI DIAGNOSTIC SUMMARY</span>
+              <span id="oxQueryLatency" class="text-emerald-300">14 ms SQL</span>
+            </div>
+            <p id="oxQuerySummary" class="text-[10px] text-slate-300 leading-snug">
+              Click RUN QUERY to inspect slurm_job_history directly on MariaDB Galera while Prometheus continues streaming 2s GPU telemetry.
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- =====================================================================
+       LEGAL & COPYRIGHT FOOTER BAR
+  ====================================================================== -->
+  <footer class="w-full border-t border-slate-800/90 bg-[#080d1a]/95 px-4 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400 font-mono shrink-0">
+    <div>
+      Copyright © 2026 Bare Metal Applied Science LLC (BMAS). All Rights Reserved. | Proprietary Architecture — Confidential &amp; Subject to BMAS NDA.
+    </div>
+    <div class="text-slate-500 hidden sm:block">
+      1440p Landscape Mode • Keys: [Space] Play/Pause • [◀ / ▶] Step • [1–6] Jump Stage
+    </div>
+  </footer>
+
+  <!-- =====================================================================
+       INTERACTIVE 6-STAGE, FAILOVER & 180-DAY QUERY ENGINE
+  ====================================================================== -->
+  <script>
+    (function () {
+      'use strict';
+
+      /* ---------------------------------------------------------------------
+         1. HARDWARE PLATFORM PROFILES
+      --------------------------------------------------------------------- */
+      const PLATFORMS = {
+        gb200: {
+          name: 'GB200 NVL72',
+          traysPerRack: 18,
+          gpusPerRack: 72,
+          bmcsPerRack: 18,
+          kwPerRack: 120,
+          samplesPerGpu: 5,
+          tag: 'GB200 NVL72 (72 GPUs/Rack)',
+        },
+        gb300: {
+          name: 'GB300 NVL72',
+          traysPerRack: 18,
+          gpusPerRack: 72,
+          bmcsPerRack: 18,
+          kwPerRack: 140,
+          samplesPerGpu: 6,
+          tag: 'GB300 NVL72 (72 GPUs • 288GB HBM3e)',
+        },
+        hgx: {
+          name: 'H100 / B200 Pod',
+          traysPerRack: 8,
+          gpusPerRack: 64,
+          bmcsPerRack: 8,
+          kwPerRack: 80,
+          samplesPerGpu: 4,
+          tag: 'H100 / B200 Pod (64 GPUs/Rack)',
+        },
+      };
+
+      /* ---------------------------------------------------------------------
+         2. MOCK 180-DAY SLURM JOB HISTORY DATASET (FOR L6 QUERY ENGINE)
+      --------------------------------------------------------------------- */
+      const MOCK_JOBS = [
+        { id: 9418, ts: '2026-11-26 16:48:12', ageHours: 0.2, rack: 'ACME-RACK-150', jobId: '88412', name: 'raptor-cfd-sim-v9', user: 'propulsion', part: 'gb300-nvl72', state: 'RUNNING', gpus: 72 },
+        { id: 9415, ts: '2026-11-26 16:31:04', ageHours: 0.4, rack: 'ACME-RACK-46',  jobId: '88409', name: 'gnc-reentry-rl',    user: 'avionics',   part: 'gb200-nvl72', state: 'RUNNING', gpus: 36 },
+        { id: 9411, ts: '2026-11-26 16:10:45', ageHours: 0.8, rack: 'ACME-RACK-01',  jobId: '88402', name: 'bmas-burnin-check', user: 'root',       part: 'gb200-nvl72', state: 'COMPLETED', gpus: 72 },
+        { id: 9384, ts: '2026-11-26 09:22:19', ageHours: 7.5, rack: 'ACME-RACK-150', jobId: '88340', name: 'thermal-shield-fem',user: 'structures', part: 'gb300-nvl72', state: 'COMPLETED', gpus: 144 },
+        { id: 9350, ts: '2026-11-25 22:14:00', ageHours: 18.6,rack: 'ACME-RACK-46',  jobId: '88291', name: 'telemetry-llm-70b', user: 'mlops',      part: 'gb200-nvl72', state: 'COMPLETED', gpus: 72 },
+        { id: 9210, ts: '2026-11-22 14:05:33', ageHours: 98.0,rack: 'ACME-RACK-01',  jobId: '87914', name: 'nvlink-fab-diag',   user: 'sre-hpc',    part: 'gb200-nvl72', state: 'COMPLETED', gpus: 72 },
+        { id: 8742, ts: '2026-10-14 08:40:11', ageHours: 1030,rack: 'ACME-RACK-150', jobId: '84102', name: 'orbit-mc-100k',     user: 'mission',    part: 'gb300-nvl72', state: 'COMPLETED', gpus: 288 },
+        { id: 8105, ts: '2026-08-03 19:15:52', ageHours: 2760,rack: 'ACME-RACK-46',  jobId: '79018', name: 'stage0-stress-180d',user: 'propulsion', part: 'gb200-nvl72', state: 'COMPLETED', gpus: 72 },
+      ];
+
+      /* ---------------------------------------------------------------------
+         3. SIX ARCHITECTURAL STAGES
+      --------------------------------------------------------------------- */
+      const STAGES = [
+        {
+          id: 0,
+          badge: 'LAYER 1 OF 6',
+          sidePill: 'STAGE 1 • EDGE STANDALONE',
+          pillClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/35',
+          title: 'L1: Edge Standalone (4 Racks | SQLite Local)',
+          heading: 'Zero-Config SQLite Primary — Ready Out of the Box',
+          desc: 'For single-row labs and air-gapped sites (1–8 racks), BMAS runs on built-in SQLite (data/bmas_nvl72.db). Low write contention (14%), zero external DBA needed, and automatic 180-day retention purge.',
+          racks: 4,
+          primaryDb: 'SQLite (Local)',
+          storage: '~0.8 GB',
+          sqlitePct: 14,
+          sqliteStatus: '14% • HEALTHY',
+          sqliteColor: '#10b981',
+          sqliteRole: 'ACTIVE PRIMARY (ZERO-CONFIG EDGE)',
+          sqliteAlert: '~0.8 GB / 180d • Comfortable (1–8 Racks)',
+          galeraPct: 0,
+          galeraStatus: '0% • STANDBY',
+          galeraActive: false,
+          galeraFoot: 'Optional HA Expansion (10–150+ Racks)',
+          envVar: 'BMAS_DB_URL = (unset → SQLite)',
+          envSub: 'Auto-creates tables on first boot',
+          gwStatus: 'STATUS: HEALTHY • ZERO DROPPED WRITES',
+          gwState: 'ok',
+          oxStatus: 'AI DIAGNOSTICS: READY (SINGLE OPERATOR)',
+          deltaStatus: 'STANDBY (SINGLE-NODE SQLITE MODE)',
+          deltaActive: false,
+          floorBadge: 'EDGE LAB / STAGING FOOTPRINT',
+          bmcWritesPerSec: 12,
+          slurmJobsPerHr: '40 jobs/hr',
+          promBarPct: 12,
+          mode: 'edge',
+          logs: [
+            { cls: 'text-emerald-400', msg: '[BOOT] BMAS_DB_URL unset → Standalone SQLite engine active' },
+            { cls: 'text-sky-300',     msg: '[INIT] SQLAlchemy create_all() verified slurm_job_history' },
+            { cls: 'text-purple-300',  msg: '[PROM] 2s DCGM firehose streaming directly to TSDB (0% SQL load)' },
+            { cls: 'text-slate-300',   msg: '[PURGE] 180-day auto-purge scheduler armed (~0.8 GB footprint)' },
+          ],
+        },
+        {
+          id: 1,
+          badge: 'LAYER 2 OF 6',
+          sidePill: 'STAGE 2 • LOCK CONTENTION WALL',
+          pillClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+          title: 'L2: SQLite Contention Wall (46 Racks | SQLITE_BUSY)',
+          heading: 'ACME Initial Floor (46 Racks) — Single-Writer Bottleneck',
+          desc: 'At 46 NVL72 racks, 828+ OOB Redfish BMCs, Vertiv CDUs, and Slurm job state transitions collide on SQLite’s single-writer lock. Write utilization spikes to 98%, causing SQLITE_BUSY queue backpressure.',
+          racks: 46,
+          primaryDb: 'SQLite (LOCKED)',
+          storage: '~6.8 GB',
+          sqlitePct: 98,
+          sqliteStatus: '98% • SQLITE_BUSY!',
+          sqliteColor: '#f43f5e',
+          sqliteRole: 'SINGLE-WRITER LOCK SATURATION (98%)',
+          sqliteAlert: '⚠ SQLITE_BUSY Contention — Cutover to Galera',
+          galeraPct: 0,
+          galeraStatus: '0% • REQUIRED',
+          galeraActive: false,
+          galeraFoot: 'Enterprise HA Mandatory Above 8–10 Racks',
+          envVar: 'BMAS_DB_URL = (unset → CONTENTION)',
+          envSub: '828+ BMCs colliding on single file lock',
+          gwStatus: '⚠ WRITE QUEUE BACKPRESSURE (SQLITE_BUSY)',
+          gwState: 'danger',
+          oxStatus: 'AI QUERIES BLOCKED BY WRITE LOCK',
+          deltaStatus: 'PAUSED — LOCAL SQLITE SATURATED',
+          deltaActive: false,
+          floorBadge: 'ACME INITIAL FLOOR • 46 RACKS',
+          bmcWritesPerSec: 165,
+          slurmJobsPerHr: '620 jobs/hr',
+          promBarPct: 38,
+          mode: 'contention',
+          logs: [
+            { cls: 'text-amber-300',   msg: '[WARN] 828 OOB Redfish BMCs + Slurm REST concurrent writes' },
+            { cls: 'text-rose-400',    msg: '[ERR] sqlite3.OperationalError: database is locked (SQLITE_BUSY)' },
+            { cls: 'text-rose-300',    msg: '[LOCK] SQLite single-writer utilization at 98% — queue backing up' },
+            { cls: 'text-sky-300',     msg: '[REC] Set BMAS_DB_URL to 3-Node MariaDB Galera Cluster' },
+          ],
+        },
+        {
+          id: 2,
+          badge: 'LAYER 3 OF 6',
+          sidePill: 'STAGE 3 • ENTERPRISE HA CUTOVER',
+          pillClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+          title: 'L3: Enterprise HA Cutover (100 Racks | 3-Node Galera)',
+          heading: 'ACME Phase 1 (100 Racks) — Auto-Schema & Sync Quorum',
+          desc: 'Exporting BMAS_DB_URL switches the exact same Cython binary to 3-Node MariaDB Galera on a 6-blade Synergy frame. SQLAlchemy + _ensure_galera_schema() auto-creates all tables and replicates via wsrep.',
+          racks: 100,
+          primaryDb: '3× Galera HA',
+          storage: '~14.5 GB',
+          sqlitePct: 8,
+          sqliteStatus: '8% • LOCAL CACHE',
+          sqliteColor: '#38bdf8',
+          sqliteRole: 'LOCAL HARDWARE STATE CACHE',
+          sqliteAlert: 'Offloaded Heavy 180d History to Galera',
+          galeraPct: 28,
+          galeraStatus: '28% • 3/3 QUORUM',
+          galeraActive: true,
+          galeraFoot: 'Row-Level Locking • 72% Headroom',
+          envVar: 'BMAS_DB_URL = mysql+pymysql://galera-node1:3306',
+          envSub: 'Auto-schema created & replicated via wsrep',
+          gwStatus: 'STATUS: ENTERPRISE HA • 0 DROPPED WRITES',
+          gwState: 'ok',
+          oxStatus: 'AI DIAGNOSTICS: MULTI-OPERATOR READY',
+          deltaStatus: 'SYNCING TRAY_COLS (GALERA ↔ SQLITE)',
+          deltaActive: true,
+          floorBadge: 'ACME PHASE 1 EXPANSION • 100 RACKS',
+          bmcWritesPerSec: 360,
+          slurmJobsPerHr: '1,450 jobs/hr',
+          promBarPct: 68,
+          mode: 'galera',
+          logs: [
+            { cls: 'text-emerald-400', msg: '[HA] BMAS_DB_URL detected → Connected galera-node1:3306' },
+            { cls: 'text-emerald-300', msg: '[DDL] init_history_tables() + _ensure_galera_schema() OK' },
+            { cls: 'text-sky-300',     msg: '[WSREP] Synchronous 3/3 quorum active across Synergy blades' },
+            { cls: 'text-slate-300',   msg: '[PERF] Cluster load steady at 28% (72% write headroom)' },
+          ],
+        },
+        {
+          id: 3,
+          badge: 'LAYER 4 OF 6',
+          sidePill: 'STAGE 4 • ZERO SPLIT-BRAIN',
+          pillClass: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+          title: 'L4: Zero Split-Brain 3-Bus Separation',
+          heading: '3 Decoupled Data Buses — Zero Database Split-Brain',
+          desc: 'BMAS eliminates dual-master split-brain by strictly separating buses: Emerald (180d Slurm history → Galera), Violet (2s Prometheus/DCGM → bypasses DB), and Cyan (core/db_sync.py → TRAY_COLS local SQLite safety net).',
+          racks: 100,
+          primaryDb: '3× Galera + TSDB',
+          storage: '~14.5 GB',
+          sqlitePct: 12,
+          sqliteStatus: '12% • TRAY MIRROR',
+          sqliteColor: '#38bdf8',
+          sqliteRole: 'RESILIENT TRAY_COLS SAFETY NET',
+          sqliteAlert: 'Mirrors BMC/CDU State Only — Zero Split-Brain',
+          galeraPct: 30,
+          galeraStatus: '30% • RELATIONAL',
+          galeraActive: true,
+          galeraFoot: 'Single Primary for slurm_job_history',
+          envVar: '3-BUS: EMERALD SQL + VIOLET TSDB + CYAN SYNC',
+          envSub: 'Strict single-primary relational ownership',
+          gwStatus: '3-BUS ARCHITECTURE ACTIVE • ZERO SPLIT-BRAIN',
+          gwState: 'cyan',
+          oxStatus: 'AI FUSES LIVE PROMETHEUS + 180D GALERA',
+          deltaStatus: 'ACTIVE: core/db_sync.py → TRAY_COLS ONLY',
+          deltaActive: true,
+          floorBadge: 'DECOUPLED 3-BUS MODEL • 100 RACKS',
+          bmcWritesPerSec: 360,
+          slurmJobsPerHr: '1,450 jobs/hr',
+          promBarPct: 72,
+          mode: 'splitbrain',
+          logs: [
+            { cls: 'text-emerald-400', msg: '[BUS-1] Emerald: slurm_job_history → MariaDB Galera primary' },
+            { cls: 'text-purple-300',  msg: '[BUS-2] Violet: 2s GPU thermals/watts → Prometheus TSDB only' },
+            { cls: 'text-sky-300',     msg: '[BUS-3] Cyan: core/db_sync.py → TRAY_COLS mirrored to SQLite' },
+            { cls: 'text-emerald-300', msg: '[SAFE] Zero dual-master primary-key collisions possible' },
+          ],
+        },
+        {
+          id: 4,
+          badge: 'LAYER 5 OF 6',
+          sidePill: 'STAGE 5 • GALERA FAILOVER DRILL',
+          pillClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+          title: 'L5: Galera Node & Cluster Failover Resilience',
+          heading: 'Live Failover: Single Node Fault vs. Full Cluster Outage',
+          desc: 'Toggle between Mode A (Node 2 offline, 2/3 quorum intact, zero downtime) and Mode B (Full 0/3 Galera outage: Prometheus 2s live telemetry keeps streaming while SQLite safety net serves TRAY_COLS BMC state).',
+          racks: 100,
+          primaryDb: '2/3 Quorum HA',
+          storage: '~14.5 GB',
+          sqlitePct: 14,
+          sqliteStatus: '14% • STANDBY NET',
+          sqliteColor: '#38bdf8',
+          sqliteRole: 'WARM TRAY_COLS FALLBACK CACHE',
+          sqliteAlert: 'Ready for Instant Graceful Degradation',
+          galeraPct: 42,
+          galeraStatus: '42% • 2/3 QUORUM',
+          galeraActive: true,
+          galeraFoot: 'Node 2 Offline • Zero-Downtime HA Routing',
+          envVar: 'BMAS_DB_URL = galera-node1,node3 (AUTO-HA)',
+          envSub: 'Quorum intact (2/3) — zero dropped transactions',
+          gwStatus: 'FAILOVER MODE A: 2/3 QUORUM • ZERO DOWNTIME',
+          gwState: 'amber',
+          oxStatus: 'OX MINI AI CONTINUOUS ON NODE 1 & 3',
+          deltaStatus: 'SYNCING TRAY_COLS (SURVIVING QUORUM)',
+          deltaActive: true,
+          floorBadge: 'FAILOVER RESILIENCE • 100 RACKS',
+          bmcWritesPerSec: 360,
+          slurmJobsPerHr: '1,450 jobs/hr',
+          promBarPct: 72,
+          mode: 'failover',
+          logs: [], // Dynamically generated based on failoverMode
+        },
+        {
+          id: 5,
+          badge: 'LAYER 6 OF 6',
+          sidePill: 'STAGE 6 • 150R & 180-DAY QUERY',
+          pillClass: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+          title: 'L6: 150-Rack Full AI Factory & 180-Day Query Engine',
+          heading: 'ACME Phase 2 (150 Racks) — Live 180-Day Query & Ox Mini',
+          desc: 'At 150 racks (2,700 trays, 10,800 GPUs), use the interactive 180-Day Query panel on the right to fire a live SQL query pulse directly to MariaDB Galera—proving relational history never impacts the 2s Prometheus bus.',
+          racks: 150,
+          primaryDb: '3× Galera HA',
+          storage: '~22.0 GB',
+          sqlitePct: 15,
+          sqliteStatus: '15% • DELTA MIRROR',
+          sqliteColor: '#38bdf8',
+          sqliteRole: 'LOCAL BMC/TRAY STATE MIRROR',
+          sqliteAlert: '2,700 Trays Mirrored • 180d Purge Active',
+          galeraPct: 48,
+          galeraStatus: '48% • 52% HEADROOM',
+          galeraActive: true,
+          galeraFoot: '180d Bounded (~22 GB) • 0 Dropped Writes',
+          envVar: 'BMAS_DB_URL = mysql+pymysql://galera-node1:3306',
+          envSub: 'Full AI Factory HA • 3/3 Synchronous Quorum',
+          gwStatus: 'AI FACTORY PRODUCTION • 52% HEADROOM',
+          gwState: 'ok',
+          oxStatus: '180-DAY QUERY & OX MINI AI READY',
+          deltaStatus: 'ACTIVE: 2,700 TRAYS DELTA-SYNCED',
+          deltaActive: true,
+          floorBadge: 'ACME PHASE 2 AI FACTORY • 150 RACKS',
+          bmcWritesPerSec: 540,
+          slurmJobsPerHr: '2,400 jobs/hr',
+          promBarPct: 96,
+          mode: 'factory',
+          logs: [
+            { cls: 'text-emerald-400', msg: '[SCALE] 150 racks active (2,700 trays / 10,800 GPUs)' },
+            { cls: 'text-amber-300',   msg: '[QUERY] 180-Day SQL queries hit Galera directly (14 ms)' },
+            { cls: 'text-purple-300',  msg: '[PROM] 2s DCGM firehose isolated — zero query interference' },
+            { cls: 'text-sky-300',     msg: '[OX] Ox Mini AI HUD synthesizing Slurm history + live Prom' },
+          ],
+        },
+      ];
+
+      /* ---------------------------------------------------------------------
+         4. STATE & DOM REFERENCES
+      --------------------------------------------------------------------- */
+      let currentStage = 0;
+      let currentPlatform = 'gb200';
+      let failoverMode = 'single'; // 'single' | 'outage' | 'recovering'
+      let isPlaying = true;
+      let activeTab = 'terminal'; // 'terminal' | 'query'
+      const STAGE_DURATION_MS = 7000;
+      let stageElapsedMs = 0;
+      let lastFrameTs = performance.now();
+
+      const el = {
+        btnPlayPause: document.getElementById('btnPlayPause'),
+        playPauseIcon: document.getElementById('playPauseIcon'),
+        playPauseText: document.getElementById('playPauseText'),
+        btnPrev: document.getElementById('btnPrev'),
+        btnNext: document.getElementById('btnNext'),
+        layerButtons: document.querySelectorAll('.layer-btn'),
+        platformButtons: document.querySelectorAll('.platform-btn'),
+        cycleProgressBar: document.getElementById('cycleProgressBar'),
+        timerLabel: document.getElementById('timerLabel'),
+        liveStageChip: document.getElementById('liveStageChip'),
+
+        // Failover bar
+        failoverControlBar: document.getElementById('failoverControlBar'),
+        btnFailoverSingle: document.getElementById('btnFailoverSingle'),
+        btnFailoverOutage: document.getElementById('btnFailoverOutage'),
+        btnSimulateRecovery: document.getElementById('btnSimulateRecovery'),
+
+        // SVG Elements
+        svgStageBadge: document.getElementById('svgStageBadge'),
+        svgStageTitle: document.getElementById('svgStageTitle'),
+        svgRackCountPill: document.getElementById('svgRackCountPill'),
+        svgRackExpNum: document.getElementById('svgRackExpNum'),
+        svgRackPowerLabel: document.getElementById('svgRackPowerLabel'),
+        svgFloorSubtext: document.getElementById('svgFloorSubtext'),
+        svgFloorPhaseBadge: document.getElementById('svgFloorPhaseBadge'),
+        svgBmcCount: document.getElementById('svgBmcCount'),
+        svgBmcBar: document.getElementById('svgBmcBar'),
+        svgBmcRate: document.getElementById('svgBmcRate'),
+        svgSlurmBar: document.getElementById('svgSlurmBar'),
+        svgSlurmRate: document.getElementById('svgSlurmRate'),
+        svgPromRatePill: document.getElementById('svgPromRatePill'),
+
+        gwCardRect: document.getElementById('gwCardRect'),
+        gwLed: document.getElementById('gwLed'),
+        svgEnvVarText: document.getElementById('svgEnvVarText'),
+        svgEnvSubText: document.getElementById('svgEnvSubText'),
+        svgGwStatusBox: document.getElementById('svgGwStatusBox'),
+        svgGwStatusText: document.getElementById('svgGwStatusText'),
+        svgOxBadgeText: document.getElementById('svgOxBadgeText'),
+        svgDeltaBadgeText: document.getElementById('svgDeltaBadgeText'),
+
+        nodeSqlite: document.getElementById('nodeSqlite'),
+        sqliteCardRect: document.getElementById('sqliteCardRect'),
+        sqliteLed: document.getElementById('sqliteLed'),
+        sqliteRoleBox: document.getElementById('sqliteRoleBox'),
+        sqliteRoleText: document.getElementById('sqliteRoleText'),
+        svgSqlitePct: document.getElementById('svgSqlitePct'),
+        svgSqliteBar: document.getElementById('svgSqliteBar'),
+        sqliteAlertBox: document.getElementById('sqliteAlertBox'),
+        sqliteAlertText: document.getElementById('sqliteAlertText'),
+
+        nodeGalera: document.getElementById('nodeGalera'),
+        galeraCardRect: document.getElementById('galeraCardRect'),
+        galeraMasterLed: document.getElementById('galeraMasterLed'),
+        gNode1Rect: document.getElementById('gNode1Rect'),
+        gNode1Led: document.getElementById('gNode1Led'),
+        gNode1Sub: document.getElementById('gNode1Sub'),
+        gNode2Rect: document.getElementById('gNode2Rect'),
+        gNode2Led: document.getElementById('gNode2Led'),
+        gNode2Sub: document.getElementById('gNode2Sub'),
+        gNode3Rect: document.getElementById('gNode3Rect'),
+        gNode3Led: document.getElementById('gNode3Led'),
+        gNode3Sub: document.getElementById('gNode3Sub'),
+        quorumPillRect: document.getElementById('quorumPillRect'),
+        quorumPillText: document.getElementById('quorumPillText'),
+        svgGaleraPct: document.getElementById('svgGaleraPct'),
+        svgGaleraBar: document.getElementById('svgGaleraBar'),
+        svgGaleraFoot: document.getElementById('svgGaleraFoot'),
+
+        nodeDeltaWorker: document.getElementById('nodeDeltaWorker'),
+        nodeOxMini: document.getElementById('nodeOxMini'),
+        oxCardRect: document.getElementById('oxCardRect'),
+
+        // Paths
+        pathRacksToGw: document.getElementById('pathRacksToGw'),
+        pathBmcToGw: document.getElementById('pathBmcToGw'),
+        pathSlurmToGw: document.getElementById('pathSlurmToGw'),
+        pathPromFirehose: document.getElementById('pathPromFirehose'),
+        pathGwToProm: document.getElementById('pathGwToProm'),
+        pathGwToSqlite: document.getElementById('pathGwToSqlite'),
+        pathGwToGalera: document.getElementById('pathGwToGalera'),
+        pathQueryToGalera: document.getElementById('pathQueryToGalera'),
+        pathDeltaToSqlite: document.getElementById('pathDeltaToSqlite'),
+        pathDeltaToGalera: document.getElementById('pathDeltaToGalera'),
+        pathOxToGw: document.getElementById('pathOxToGw'),
+        pathWsrep12: document.getElementById('pathWsrep12'),
+        pathWsrep23: document.getElementById('pathWsrep23'),
+        pathWsrep31: document.getElementById('pathWsrep31'),
+        packetLayer: document.getElementById('packetLayer'),
+        queryPulseLayer: document.getElementById('queryPulseLayer'),
+
+        // Sidebar
+        sideStagePill: document.getElementById('sideStagePill'),
+        sidePlatformTag: document.getElementById('sidePlatformTag'),
+        sideStageHeading: document.getElementById('sideStageHeading'),
+        sideStageDesc: document.getElementById('sideStageDesc'),
+        kpiRacks: document.getElementById('kpiRacks'),
+        kpiTrays: document.getElementById('kpiTrays'),
+        kpiGpus: document.getElementById('kpiGpus'),
+        kpiBmcs: document.getElementById('kpiBmcs'),
+        kpiDb: document.getElementById('kpiDb'),
+        kpiStorage: document.getElementById('kpiStorage'),
+        barSqliteLabel: document.getElementById('barSqliteLabel'),
+        barSqliteFill: document.getElementById('barSqliteFill'),
+        barGaleraLabel: document.getElementById('barGaleraLabel'),
+        barGaleraFill: document.getElementById('barGaleraFill'),
+        barPromLabel: document.getElementById('barPromLabel'),
+        barPromFill: document.getElementById('barPromFill'),
+
+        // Tabs & Query Panel
+        tabTerminalBtn: document.getElementById('tabTerminalBtn'),
+        tabQueryBtn: document.getElementById('tabQueryBtn'),
+        panelTerminal: document.getElementById('panelTerminal'),
+        panelQuery: document.getElementById('panelQuery'),
+        terminalOutput: document.getElementById('terminalOutput'),
+        queryRackSelect: document.getElementById('queryRackSelect'),
+        queryWindowSelect: document.getElementById('queryWindowSelect'),
+        btnRunQuery: document.getElementById('btnRunQuery'),
+        queryStatusLine: document.getElementById('queryStatusLine'),
+        queryTableBody: document.getElementById('queryTableBody'),
+        oxQuerySummary: document.getElementById('oxQuerySummary'),
+        oxQueryLatency: document.getElementById('oxQueryLatency'),
+      };
+
+      /* ---------------------------------------------------------------------
+         5. ANIMATED SVG PACKETS & QUERY PULSE ENGINE (60FPS)
+      --------------------------------------------------------------------- */
+      const SVG_NS = 'http://www.w3.org/2000/svg';
+      let activePackets = [];
+      let queryPulses = [];
+
+      function buildPacketsForStage(stage) {
+        while (el.packetLayer.firstChild) {
+          el.packetLayer.removeChild(el.packetLayer.firstChild);
+        }
+        activePackets = [];
+        const specs = [];
+
+        // Prometheus 2s firehose ALWAYS runs regardless of DB state or Galera outage
+        const promDensity = stage.racks >= 100 ? 5 : stage.racks >= 46 ? 4 : 2;
+        specs.push({ path: el.pathPromFirehose, color: '#a855f7', count: promDensity, speed: 0.28, radius: 4.2, filter: 'url(#glowViolet)' });
+        specs.push({ path: el.pathGwToProm, color: '#c084fc', count: 2, speed: 0.24, radius: 3.2, filter: 'url(#glowViolet)' });
+
+        if (stage.mode === 'contention') {
+          specs.push({ path: el.pathRacksToGw, color: '#f59e0b', count: 4, speed: 0.55, radius: 4.5, filter: 'url(#glowRose)' });
+          specs.push({ path: el.pathBmcToGw, color: '#f43f5e', count: 5, speed: 0.62, radius: 4.8, filter: 'url(#glowRose)' });
+          specs.push({ path: el.pathSlurmToGw, color: '#f59e0b', count: 4, speed: 0.52, radius: 4.5, filter: 'url(#glowRose)' });
+          specs.push({ path: el.pathGwToSqlite, color: '#f43f5e', count: 7, speed: 0.44, radius: 5.2, filter: 'url(#glowRose)' });
+        } else if (stage.mode === 'edge') {
+          specs.push({ path: el.pathRacksToGw, color: '#38bdf8', count: 2, speed: 0.30, radius: 3.8, filter: 'url(#glowCyan)' });
+          specs.push({ path: el.pathBmcToGw, color: '#f59e0b', count: 2, speed: 0.26, radius: 3.5, filter: '' });
+          specs.push({ path: el.pathSlurmToGw, color: '#10b981', count: 2, speed: 0.28, radius: 3.8, filter: 'url(#glowEmerald)' });
+          specs.push({ path: el.pathGwToSqlite, color: '#10b981', count: 3, speed: 0.34, radius: 4.4, filter: 'url(#glowEmerald)' });
+        } else if (stage.mode === 'failover' && failoverMode === 'outage') {
+          // Full Galera Outage: Inbound continues, Gateway serves TRAY_COLS via SQLite safety net
+          specs.push({ path: el.pathRacksToGw, color: '#38bdf8', count: 3, speed: 0.36, radius: 4.0, filter: 'url(#glowCyan)' });
+          specs.push({ path: el.pathBmcToGw, color: '#f59e0b', count: 3, speed: 0.34, radius: 3.8, filter: '' });
+          specs.push({ path: el.pathDeltaToSqlite, color: '#38bdf8', count: 4, speed: 0.38, radius: 4.5, filter: 'url(#glowCyan)' });
+          specs.push({ path: el.pathOxToGw, color: '#f59e0b', count: 2, speed: 0.38, radius: 3.6, filter: 'url(#glowAmber)' });
+        } else {
+          // Galera HA / Split-Brain / Single-Node Failover / Full AI Factory / Recovering
+          const inboundCount = stage.racks >= 150 ? 4 : 3;
+          specs.push({ path: el.pathRacksToGw, color: '#38bdf8', count: inboundCount, speed: 0.38, radius: 4.0, filter: 'url(#glowCyan)' });
+          specs.push({ path: el.pathBmcToGw, color: '#f59e0b', count: inboundCount, speed: 0.36, radius: 3.8, filter: '' });
+          specs.push({ path: el.pathSlurmToGw, color: '#10b981', count: inboundCount, speed: 0.40, radius: 4.0, filter: 'url(#glowEmerald)' });
+          specs.push({ path: el.pathGwToGalera, color: '#10b981', count: stage.racks >= 150 ? 5 : 4, speed: 0.42, radius: 4.8, filter: 'url(#glowEmerald)' });
+
+          if (stage.mode === 'failover' && failoverMode === 'single') {
+            // Only Node 1 <-> Node 3 active
+            specs.push({ path: el.pathWsrep31, color: '#f59e0b', count: 3, speed: 0.62, radius: 4.0, filter: 'url(#glowAmber)' });
+          } else {
+            specs.push({ path: el.pathWsrep12, color: '#34d399', count: 2, speed: 0.58, radius: 3.6, filter: 'url(#glowEmerald)' });
+            specs.push({ path: el.pathWsrep23, color: '#34d399', count: 2, speed: 0.58, radius: 3.6, filter: 'url(#glowEmerald)' });
+            specs.push({ path: el.pathWsrep31, color: '#34d399', count: 2, speed: 0.58, radius: 3.6, filter: 'url(#glowEmerald)' });
+          }
+
+          const deltaCount = (stage.mode === 'splitbrain' || failoverMode === 'recovering') ? 4 : 2;
+          specs.push({ path: el.pathDeltaToSqlite, color: '#38bdf8', count: deltaCount, speed: 0.32, radius: 4.0, filter: 'url(#glowCyan)' });
+          specs.push({ path: el.pathDeltaToGalera, color: '#38bdf8', count: deltaCount, speed: 0.32, radius: 4.0, filter: 'url(#glowCyan)' });
+          specs.push({ path: el.pathOxToGw, color: '#38bdf8', count: stage.racks >= 150 ? 3 : 2, speed: 0.45, radius: 3.6, filter: 'url(#glowCyan)' });
+        }
+
+        for (const s of specs) {
+          const totalLen = s.path.getTotalLength();
+          for (let i = 0; i < s.count; i++) {
+            const circle = document.createElementNS(SVG_NS, 'circle');
+            circle.setAttribute('r', s.radius);
+            circle.setAttribute('fill', s.color);
+            if (s.filter) circle.setAttribute('filter', s.filter);
+            el.packetLayer.appendChild(circle);
+            activePackets.push({
+              el: circle,
+              path: s.path,
+              totalLen,
+              t: i / s.count,
+              speed: s.speed,
+            });
+          }
+        }
+      }
+
+      /* Fire a visible one-shot SQL query pulse from Ox Mini -> MariaDB Galera and back */
+      function triggerQueryPulse() {
+        el.pathQueryToGalera.classList.remove('flow-line-dim');
+        el.pathQueryToGalera.classList.add('flow-line-fast');
+        el.pathQueryToGalera.setAttribute('stroke', '#f59e0b');
+
+        const totalLen = el.pathQueryToGalera.getTotalLength();
+        for (let i = 0; i < 4; i++) {
+          const orb = document.createElementNS(SVG_NS, 'circle');
+          orb.setAttribute('r', i % 2 === 0 ? '5.5' : '4.2');
+          orb.setAttribute('fill', i % 2 === 0 ? '#fbbf24' : '#38bdf8');
+          orb.setAttribute('filter', 'url(#glowAmber)');
+          el.queryPulseLayer.appendChild(orb);
+          queryPulses.push({
+            el: orb,
+            path: el.pathQueryToGalera,
+            totalLen,
+            t: -i * 0.14,
+            speed: 1.35,
+            reverse: i >= 2, // first 2 go out to Galera, next 2 return results
+          });
+        }
+
+        setTimeout(() => {
+          if (STAGES[currentStage].mode !== 'factory') {
+            el.pathQueryToGalera.classList.remove('flow-line-fast');
+            el.pathQueryToGalera.classList.add('flow-line-dim');
+          } else {
+            el.pathQueryToGalera.classList.remove('flow-line-fast');
+            el.pathQueryToGalera.classList.add('flow-line');
+          }
+        }, 1600);
+      }
+
+      /* ---------------------------------------------------------------------
+         6. HELPERS FOR GALERA NODE VISUAL STATES
+      --------------------------------------------------------------------- */
+      function setGaleraNodeStyle(rectEl, ledEl, subEl, status, labelText) {
+        rectEl.classList.remove('node-danger');
+        if (status === 'up') {
+          rectEl.setAttribute('fill', '#064e3b');
+          rectEl.setAttribute('stroke', '#34d399');
+          ledEl.setAttribute('fill', '#10b981');
+          subEl.setAttribute('fill', '#6ee7b7');
+          subEl.textContent = labelText;
+        } else if (status === 'down') {
+          rectEl.setAttribute('fill', '#4c0519');
+          rectEl.setAttribute('stroke', '#f43f5e');
+          rectEl.classList.add('node-danger');
+          ledEl.setAttribute('fill', '#f43f5e');
+          subEl.setAttribute('fill', '#fda4af');
+          subEl.textContent = labelText;
+        } else if (status === 'warn') {
+          rectEl.setAttribute('fill', '#451a03');
+          rectEl.setAttribute('stroke', '#f59e0b');
+          ledEl.setAttribute('fill', '#f59e0b');
+          subEl.setAttribute('fill', '#fde68a');
+          subEl.textContent = labelText;
+        }
+      }
+
+      function setBusClass(pathEl, stateClass, strokeColor) {
+        pathEl.classList.remove('flow-line', 'flow-line-fast', 'flow-line-dim', 'flow-line-reverse', 'flow-line-broken');
+        pathEl.classList.add(stateClass);
+        if (strokeColor) pathEl.setAttribute('stroke', strokeColor);
+      }
+
+      /* ---------------------------------------------------------------------
+         7. TERMINAL LOG RENDERER & TAB SWITCHER
+      --------------------------------------------------------------------- */
+      function renderTerminalLogs(logs) {
+        el.terminalOutput.innerHTML = logs
+          .map((item) => `<div class="${item.cls}"><span class="text-slate-500 mr-1.5">$</span>${item.msg}</div>`)
+          .join('');
+      }
+
+      function setActiveTab(tab) {
+        activeTab = tab;
+        if (tab === 'query') {
+          el.panelTerminal.classList.add('hidden');
+          el.panelQuery.classList.remove('hidden');
+          el.panelQuery.classList.add('flex');
+          el.tabQueryBtn.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition-all cursor-pointer bg-amber-500/20 text-amber-300 border border-amber-400/45';
+          el.tabTerminalBtn.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold transition-all cursor-pointer text-slate-400 hover:text-sky-300 border border-transparent';
+        } else {
+          el.panelQuery.classList.add('hidden');
+          el.panelQuery.classList.remove('flex');
+          el.panelTerminal.classList.remove('hidden');
+          el.tabTerminalBtn.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition-all cursor-pointer bg-sky-500/20 text-sky-300 border border-sky-400/40';
+          el.tabQueryBtn.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold transition-all cursor-pointer text-slate-400 hover:text-amber-300 border border-transparent';
+        }
+      }
+
+      /* ---------------------------------------------------------------------
+         8. 180-DAY QUERY EXECUTION & OX MINI SUMMARY
+      --------------------------------------------------------------------- */
+      function runHistoryQuery(animatePulse) {
+        const rackFilter = el.queryRackSelect.value;
+        const winFilter = el.queryWindowSelect.value;
+        const maxHours = winFilter === '1h' ? 1 : winFilter === '24h' ? 24 : winFilter === '7d' ? 168 : 4320;
+
+        const filtered = MOCK_JOBS.filter((j) => {
+          const rackOk = rackFilter === 'ALL' || j.rack === rackFilter;
+          const timeOk = j.ageHours <= maxHours;
+          return rackOk && timeOk;
+        });
+
+        const isOutage = STAGES[currentStage].mode === 'failover' && failoverMode === 'outage';
+        if (isOutage) {
+          el.queryStatusLine.className = 'text-[9.5px] font-mono text-rose-300 bg-rose-500/15 border border-rose-500/35 rounded-lg px-2 py-1 shrink-0';
+          el.queryStatusLine.textContent = '[DEGRADED] Galera 0/3 unreachable — Live Prometheus & SQLite TRAY_COLS active';
+          el.queryTableBody.innerHTML = '<tr><td colspan="9" class="py-3 px-2 text-center text-rose-300">MariaDB Galera offline — historical slurm_job_history paused until quorum recovers.</td></tr>';
+          el.oxQueryLatency.textContent = 'OFFLINE';
+          el.oxQuerySummary.textContent = 'Ox Mini: Galera cluster unreachable. Live 2s GPU thermals remain online via Prometheus TSDB and last-known BMC state is served from local SQLite.';
+          return;
+        }
+
+        if (animatePulse) triggerQueryPulse();
+
+        const latency = Math.floor(11 + Math.random() * 8);
+        el.queryStatusLine.className = 'text-[9.5px] font-mono text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-2 py-1 shrink-0';
+        el.queryStatusLine.textContent = `[SQL] Returned ${filtered.length} row(s) from MariaDB Galera (${rackFilter} • ${winFilter}) • 0% Prom Impact`;
+        el.oxQueryLatency.textContent = `${latency} ms SQL`;
+
+        if (filtered.length === 0) {
+          el.queryTableBody.innerHTML = '<tr><td colspan="9" class="py-3 px-2 text-center text-slate-400">No slurm_job_history records in selected window.</td></tr>';
+          el.oxQuerySummary.textContent = `Ox Mini: 0 Slurm transitions logged for ${rackFilter} in the past ${winFilter}. Expand window to 7d or 180d to inspect archived runs.`;
+          return;
+        }
+
+        el.queryTableBody.innerHTML = filtered
+          .map((j) => {
+            const stClass = j.state === 'RUNNING' ? 'text-emerald-400 font-bold' : 'text-sky-300';
+            return `<tr class="hover:bg-slate-800/60">
+              <td class="py-1 px-1.5 text-slate-400">${j.id}</td>
+              <td class="py-1 px-1.5 text-slate-300">${j.ts}</td>
+              <td class="py-1 px-1.5 text-sky-300 font-semibold">${j.rack}</td>
+              <td class="py-1 px-1.5 text-amber-300">${j.jobId}</td>
+              <td class="py-1 px-1.5 text-white">${j.name}</td>
+              <td class="py-1 px-1.5 text-slate-300">${j.user}</td>
+              <td class="py-1 px-1.5 text-purple-300">${j.part}</td>
+              <td class="py-1 px-1.5 ${stClass}">${j.state}</td>
+              <td class="py-1 px-1.5 text-right text-emerald-300 font-bold">${j.gpus}</td>
+            </tr>`;
+          })
+          .join('');
+
+        const runningCount = filtered.filter((j) => j.state === 'RUNNING').length;
+        const totalGpus = filtered.reduce((acc, j) => acc + j.gpus, 0);
+        el.oxQuerySummary.textContent = `Ox Mini: Found ${filtered.length} job event(s) (${runningCount} active RUNNING) totaling ${totalGpus} GPU-allocations across ${rackFilter}. Zero lock contention on Galera; 2s Prometheus bus untouched.`;
+      }
+
+      /* ---------------------------------------------------------------------
+         9. MAIN STAGE + PLATFORM + FAILOVER RENDERER
+      --------------------------------------------------------------------- */
+      function renderAll() {
+        const stage = STAGES[currentStage];
+        const plat = PLATFORMS[currentPlatform];
+
+        const trays = stage.racks * plat.traysPerRack;
+        const gpus = stage.racks * plat.gpusPerRack;
+        const bmcs = stage.racks * plat.bmcsPerRack;
+        const totalMw = ((stage.racks * plat.kwPerRack) / 1000).toFixed(2);
+        const promSamplesSec = (gpus * plat.samplesPerGpu).toLocaleString();
+
+        // Layer buttons styling
+        el.layerButtons.forEach((btn, idx) => {
+          if (idx === currentStage) {
+            btn.className = 'layer-btn px-2 py-1 rounded-lg text-[10.5px] font-mono font-bold border transition-all cursor-pointer bg-sky-500/25 text-sky-200 border-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.3)]';
+          } else {
+            btn.className = 'layer-btn px-2 py-1 rounded-lg text-[10.5px] font-mono font-semibold border transition-all cursor-pointer bg-slate-900/80 text-slate-400 border-slate-700/80 hover:text-slate-200 hover:border-slate-500';
+          }
+        });
+
+        // Platform buttons styling
+        el.platformButtons.forEach((btn) => {
+          const isAct = btn.dataset.platform === currentPlatform;
+          btn.className = isAct
+            ? 'platform-btn px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold transition-all bg-sky-500/20 text-sky-300 border border-sky-400/50 shadow-sm cursor-pointer'
+            : 'platform-btn px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold transition-all text-slate-400 hover:text-slate-200 border border-transparent cursor-pointer';
+        });
+
+        // Show/Hide L5 Failover Control Bar
+        if (stage.mode === 'failover') {
+          el.failoverControlBar.classList.remove('hidden');
+          el.failoverControlBar.classList.add('flex');
+        } else {
+          el.failoverControlBar.classList.add('hidden');
+          el.failoverControlBar.classList.remove('flex');
+        }
+
+        // Update Failover toggle buttons
+        if (failoverMode === 'single') {
+          el.btnFailoverSingle.className = 'px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold border transition-all cursor-pointer bg-amber-500/25 text-amber-200 border-amber-400';
+          el.btnFailoverOutage.className = 'px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-semibold border transition-all cursor-pointer bg-slate-800 text-slate-300 border-slate-700 hover:border-rose-400/60';
+          el.btnSimulateRecovery.classList.add('hidden');
+        } else if (failoverMode === 'outage') {
+          el.btnFailoverSingle.className = 'px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-semibold border transition-all cursor-pointer bg-slate-800 text-slate-300 border-slate-700 hover:border-amber-400/60';
+          el.btnFailoverOutage.className = 'px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold border transition-all cursor-pointer bg-rose-500/25 text-rose-200 border-rose-400';
+          el.btnSimulateRecovery.classList.remove('hidden');
+        } else {
+          el.btnSimulateRecovery.classList.add('hidden');
+        }
+
+        // Compute effective parameters (allowing L5 failover overrides)
+        let effPrimaryDb = stage.primaryDb;
+        let effSqlitePct = stage.sqlitePct;
+        let effSqliteStatus = stage.sqliteStatus;
+        let effSqliteColor = stage.sqliteColor;
+        let effSqliteRole = stage.sqliteRole;
+        let effSqliteAlert = stage.sqliteAlert;
+        let effGaleraPct = stage.galeraPct;
+        let effGaleraStatus = stage.galeraStatus;
+        let effGaleraActive = stage.galeraActive;
+        let effGaleraFoot = stage.galeraFoot;
+        let effEnvVar = stage.envVar;
+        let effEnvSub = stage.envSub;
+        let effGwStatus = stage.gwStatus;
+        let effGwState = stage.gwState;
+        let effOxStatus = stage.oxStatus;
+        let effDeltaStatus = stage.deltaStatus;
+        let effLogs = stage.logs;
+
+        if (stage.mode === 'failover') {
+          if (failoverMode === 'single') {
+            effLogs = [
+              { cls: 'text-rose-400',    msg: '[ALERT] galera-node2 unreachable — wsrep view updated (2/3)' },
+              { cls: 'text-emerald-400', msg: '[HA] Quorum INTACT (2/3) — Gateway auto-routes to node1/node3' },
+              { cls: 'text-sky-300',     msg: '[SYNC] core/db_sync.py continues TRAY_COLS mirror (0 drops)' },
+              { cls: 'text-purple-300',  msg: '[PROM] 2s DCGM telemetry uninterrupted across 100 racks' },
+            ];
+          } else if (failoverMode === 'outage') {
+            effPrimaryDb = 'SQLite Fallback';
+            effSqlitePct = 24;
+            effSqliteStatus = '24% • FALLBACK ACTIVE';
+            effSqliteColor = '#38bdf8';
+            effSqliteRole = 'ACTIVE SAFETY NET (TRAY_COLS)';
+            effSqliteAlert = 'Serving Last-Known BMC State During Outage';
+            effGaleraPct = 0;
+            effGaleraStatus = '0% • 0/3 OUTAGE';
+            effGaleraActive = true; // keep visible in red!
+            effGaleraFoot = 'ALL 3 NODES UNREACHABLE — AWAITING RECOVERY';
+            effEnvVar = 'GALERA UNREACHABLE → GRACEFUL DEGRADATION';
+            effEnvSub = 'Prometheus 2s live + SQLite TRAY_COLS active';
+            effGwStatus = 'DEGRADED MODE: LIVE PROM + SQLITE SAFETY NET';
+            effGwState = 'danger';
+            effOxStatus = 'OX MINI: LIVE PROMETHEUS + LOCAL BMC CACHE';
+            effDeltaStatus = 'SERVING LOCAL TRAY_COLS • QUEUING DELTAS';
+            effLogs = [
+              { cls: 'text-rose-400',    msg: '[CRIT] All 3 MariaDB Galera nodes unreachable (0/3 quorum)' },
+              { cls: 'text-purple-300',  msg: '[LIVE] Prometheus/DCGM 2s telemetry CONTINUES uninterrupted' },
+              { cls: 'text-sky-300',     msg: '[FALLBACK] core/db_sync.py serves TRAY_COLS from local SQLite' },
+              { cls: 'text-amber-300',   msg: '[QUEUE] Delta resync armed — click SIMULATE RECOVERY to restore' },
+            ];
+          } else if (failoverMode === 'recovering') {
+            effPrimaryDb = '3× Galera (RESYNC)';
+            effSqlitePct = 16;
+            effSqliteStatus = '16% • RESYNCING';
+            effSqliteColor = '#10b981';
+            effSqliteRole = 'PUSHING TRAY_COLS DELTA TO GALERA';
+            effSqliteAlert = 'Automatic Recovery Sync Complete';
+            effGaleraPct = 32;
+            effGaleraStatus = '32% • 3/3 RESTORED';
+            effGaleraActive = true;
+            effGaleraFoot = 'Quorum Restored • Delta Resync Complete';
+            effEnvVar = 'GALERA RESTORED → AUTO DELTA-RESYNC';
+            effEnvSub = 'core/db_sync.py reconciled TRAY_COLS cleanly';
+            effGwStatus = 'RECOVERY COMPLETE • 3/3 QUORUM RESTORED';
+            effGwState = 'ok';
+            effOxStatus = 'OX MINI AI: FULL SQL + PROM RESTORED';
+            effDeltaStatus = 'AUTO-RESYNCED TRAY_COLS → GALERA OK';
+            effLogs = [
+              { cls: 'text-emerald-400', msg: '[RECOVER] Galera 3/3 quorum restored (node1, node2, node3)' },
+              { cls: 'text-sky-300',     msg: '[RESYNC] core/db_sync.py pushed local TRAY_COLS deltas cleanly' },
+              { cls: 'text-emerald-300', msg: '[OK] slurm_job_history writes resumed with zero split-brain' },
+              { cls: 'text-purple-300',  msg: '[PROM] 0 seconds of 2s GPU telemetry lost during outage' },
+            ];
+          }
+        }
+
+        // Top SVG bar
+        el.svgStageBadge.textContent = stage.badge;
+        el.svgStageTitle.textContent = stage.title;
+
+        // Compute Floor SVG Node
+        el.svgRackCountPill.textContent = `${stage.racks} RACKS`;
+        el.svgRackExpNum.textContent = gpus.toLocaleString();
+        el.svgRackPowerLabel.textContent = `${totalMw} MW`;
+        el.svgFloorSubtext.textContent = `${trays.toLocaleString()} Compute Trays • ${plat.name}`;
+        el.svgFloorPhaseBadge.textContent = stage.floorBadge;
+
+        el.svgBmcCount.textContent = `${bmcs.toLocaleString()} OOB BMCs + Vertiv CDUs`;
+        el.svgBmcRate.textContent = `${stage.bmcWritesPerSec} writes/s`;
+        el.svgBmcBar.setAttribute('width', Math.min(232, Math.max(28, Math.round((stage.bmcWritesPerSec / 540) * 232))));
+
+        el.svgSlurmRate.textContent = stage.slurmJobsPerHr;
+        el.svgSlurmBar.setAttribute('width', Math.min(232, Math.max(30, Math.round((stage.racks / 150) * 232))));
+        el.svgPromRatePill.textContent = `${promSamplesSec} samples/sec (BYPASSES SQL)`;
+
+        // Gateway SVG Node
+        el.svgEnvVarText.textContent = effEnvVar;
+        el.svgEnvSubText.textContent = effEnvSub;
+        el.svgGwStatusText.textContent = effGwStatus;
+
+        if (effGwState === 'danger') {
+          el.gwLed.setAttribute('fill', '#f43f5e');
+          el.svgEnvVarText.setAttribute('fill', '#fda4af');
+          el.svgGwStatusBox.setAttribute('fill', '#881337');
+          el.svgGwStatusBox.setAttribute('stroke', '#f43f5e');
+          el.svgGwStatusText.setAttribute('fill', '#ffe4e6');
+        } else if (effGwState === 'amber') {
+          el.gwLed.setAttribute('fill', '#f59e0b');
+          el.svgEnvVarText.setAttribute('fill', '#fde68a');
+          el.svgGwStatusBox.setAttribute('fill', '#451a03');
+          el.svgGwStatusBox.setAttribute('stroke', '#f59e0b');
+          el.svgGwStatusText.setAttribute('fill', '#fef3c7');
+        } else if (effGwState === 'cyan') {
+          el.gwLed.setAttribute('fill', '#38bdf8');
+          el.svgEnvVarText.setAttribute('fill', '#7dd3fc');
+          el.svgGwStatusBox.setAttribute('fill', '#083344');
+          el.svgGwStatusBox.setAttribute('stroke', '#38bdf8');
+          el.svgGwStatusText.setAttribute('fill', '#bae6fd');
+        } else {
+          el.gwLed.setAttribute('fill', '#10b981');
+          el.svgEnvVarText.setAttribute('fill', '#34d399');
+          el.svgGwStatusBox.setAttribute('fill', '#064e3b');
+          el.svgGwStatusBox.setAttribute('stroke', '#10b981');
+          el.svgGwStatusText.setAttribute('fill', '#6ee7b7');
+        }
+
+        el.svgOxBadgeText.textContent = effOxStatus;
+        el.svgDeltaBadgeText.textContent = effDeltaStatus;
+
+        // SQLite Node
+        el.svgSqlitePct.textContent = `${effSqlitePct}%`;
+        el.svgSqlitePct.setAttribute('fill', effSqliteColor);
+        el.svgSqliteBar.setAttribute('width', Math.round((effSqlitePct / 100) * 258));
+        el.svgSqliteBar.setAttribute('fill', effSqliteColor);
+        el.sqliteRoleText.textContent = effSqliteRole;
+        el.sqliteAlertText.textContent = effSqliteAlert;
+
+        el.sqliteCardRect.classList.remove('node-danger', 'node-emerald-glow', 'node-cyan-glow');
+        if (stage.mode === 'contention') {
+          el.sqliteCardRect.classList.add('node-danger');
+          el.sqliteCardRect.setAttribute('stroke', '#f43f5e');
+          el.sqliteLed.setAttribute('fill', '#f43f5e');
+          el.sqliteRoleBox.setAttribute('fill', '#881337');
+          el.sqliteRoleBox.setAttribute('stroke', '#f43f5e');
+          el.sqliteRoleText.setAttribute('fill', '#ffe4e6');
+          el.sqliteAlertBox.setAttribute('fill', '#4c0519');
+          el.sqliteAlertBox.setAttribute('stroke', '#f43f5e');
+          el.sqliteAlertText.setAttribute('fill', '#fda4af');
+        } else if (stage.mode === 'edge') {
+          el.sqliteCardRect.classList.add('node-emerald-glow');
+          el.sqliteCardRect.setAttribute('stroke', '#10b981');
+          el.sqliteLed.setAttribute('fill', '#10b981');
+          el.sqliteRoleBox.setAttribute('fill', '#064e3b');
+          el.sqliteRoleBox.setAttribute('stroke', '#10b981');
+          el.sqliteRoleText.setAttribute('fill', '#6ee7b7');
+          el.sqliteAlertBox.setAttribute('fill', '#0f172a');
+          el.sqliteAlertBox.setAttribute('stroke', '#334155');
+          el.sqliteAlertText.setAttribute('fill', '#94a3b8');
+        } else {
+          el.sqliteCardRect.classList.add('node-cyan-glow');
+          el.sqliteCardRect.setAttribute('stroke', '#38bdf8');
+          el.sqliteLed.setAttribute('fill', '#38bdf8');
+          el.sqliteRoleBox.setAttribute('fill', '#083344');
+          el.sqliteRoleBox.setAttribute('stroke', '#38bdf8');
+          el.sqliteRoleText.setAttribute('fill', '#bae6fd');
+          el.sqliteAlertBox.setAttribute('fill', '#0f172a');
+          el.sqliteAlertBox.setAttribute('stroke', '#1e293b');
+          el.sqliteAlertText.setAttribute('fill', '#94a3b8');
+        }
+
+        // Galera Cluster & Individual Node Health
+        el.galeraCardRect.classList.remove('node-danger', 'node-amber-glow', 'node-emerald-glow');
+        if (!effGaleraActive) {
+          el.nodeGalera.classList.remove('node-active');
+          el.nodeGalera.classList.add('node-dimmed');
+          el.galeraMasterLed.setAttribute('fill', '#64748b');
+          el.svgGaleraPct.textContent = 'STANDBY';
+          el.svgGaleraPct.setAttribute('fill', '#64748b');
+          el.svgGaleraBar.setAttribute('width', 0);
+          el.quorumPillRect.setAttribute('fill', '#0f172a');
+          el.quorumPillRect.setAttribute('stroke', '#475569');
+          el.quorumPillText.setAttribute('fill', '#94a3b8');
+          el.quorumPillText.textContent = 'STANDBY';
+          setGaleraNodeStyle(el.gNode1Rect, el.gNode1Led, el.gNode1Sub, 'up', 'PRIMARY :3306');
+          setGaleraNodeStyle(el.gNode2Rect, el.gNode2Led, el.gNode2Sub, 'up', 'SYNC REPLICA');
+          setGaleraNodeStyle(el.gNode3Rect, el.gNode3Led, el.gNode3Sub, 'up', 'SYNC REPLICA');
+        } else {
+          el.nodeGalera.classList.remove('node-dimmed');
+          el.nodeGalera.classList.add('node-active');
+          el.svgGaleraBar.setAttribute('width', Math.round((effGaleraPct / 100) * 258));
+
+          if (stage.mode === 'failover' && failoverMode === 'single') {
+            el.galeraCardRect.classList.add('node-amber-glow');
+            el.galeraCardRect.setAttribute('stroke', '#f59e0b');
+            el.galeraMasterLed.setAttribute('fill', '#f59e0b');
+            el.svgGaleraPct.textContent = `${effGaleraPct}%`;
+            el.svgGaleraPct.setAttribute('fill', '#fbbf24');
+            el.svgGaleraBar.setAttribute('fill', '#f59e0b');
+            el.quorumPillRect.setAttribute('fill', '#451a03');
+            el.quorumPillRect.setAttribute('stroke', '#f59e0b');
+            el.quorumPillText.setAttribute('fill', '#fde68a');
+            el.quorumPillText.textContent = '2/3 QUORUM';
+            setGaleraNodeStyle(el.gNode1Rect, el.gNode1Led, el.gNode1Sub, 'up', 'PRIMARY :3306');
+            setGaleraNodeStyle(el.gNode2Rect, el.gNode2Led, el.gNode2Sub, 'down', 'NODE OFFLINE');
+            setGaleraNodeStyle(el.gNode3Rect, el.gNode3Led, el.gNode3Sub, 'up', 'SYNC REPLICA');
+          } else if (stage.mode === 'failover' && failoverMode === 'outage') {
+            el.galeraCardRect.classList.add('node-danger');
+            el.galeraCardRect.setAttribute('stroke', '#f43f5e');
+            el.galeraMasterLed.setAttribute('fill', '#f43f5e');
+            el.svgGaleraPct.textContent = 'OUTAGE';
+            el.svgGaleraPct.setAttribute('fill', '#f43f5e');
+            el.svgGaleraBar.setAttribute('width', 0);
+            el.quorumPillRect.setAttribute('fill', '#4c0519');
+            el.quorumPillRect.setAttribute('stroke', '#f43f5e');
+            el.quorumPillText.setAttribute('fill', '#fda4af');
+            el.quorumPillText.textContent = '0/3 OUTAGE';
+            setGaleraNodeStyle(el.gNode1Rect, el.gNode1Led, el.gNode1Sub, 'down', 'UNREACHABLE');
+            setGaleraNodeStyle(el.gNode2Rect, el.gNode2Led, el.gNode2Sub, 'down', 'UNREACHABLE');
+            setGaleraNodeStyle(el.gNode3Rect, el.gNode3Led, el.gNode3Sub, 'down', 'UNREACHABLE');
+          } else {
+            el.galeraCardRect.classList.add('node-emerald-glow');
+            el.galeraCardRect.setAttribute('stroke', '#10b981');
+            el.galeraMasterLed.setAttribute('fill', '#10b981');
+            el.svgGaleraPct.textContent = `${effGaleraPct}%`;
+            el.svgGaleraPct.setAttribute('fill', '#34d399');
+            el.svgGaleraBar.setAttribute('fill', '#10b981');
+            el.quorumPillRect.setAttribute('fill', '#022c22');
+            el.quorumPillRect.setAttribute('stroke', '#10b981');
+            el.quorumPillText.setAttribute('fill', '#34d399');
+            el.quorumPillText.textContent = '3/3 QUORUM';
+            setGaleraNodeStyle(el.gNode1Rect, el.gNode1Led, el.gNode1Sub, 'up', 'PRIMARY :3306');
+            setGaleraNodeStyle(el.gNode2Rect, el.gNode2Led, el.gNode2Sub, 'up', 'SYNC REPLICA');
+            setGaleraNodeStyle(el.gNode3Rect, el.gNode3Led, el.gNode3Sub, 'up', 'SYNC REPLICA');
+          }
+        }
+        el.svgGaleraFoot.textContent = effGaleraFoot;
+
+        // Delta Worker & Ox Mini visual prominence
+        if (stage.deltaActive) {
+          el.nodeDeltaWorker.classList.remove('node-dimmed');
+          el.nodeDeltaWorker.classList.add('node-active');
+        } else {
+          el.nodeDeltaWorker.classList.remove('node-active');
+          el.nodeDeltaWorker.classList.add('node-dimmed');
+        }
+
+        if (stage.mode === 'factory') {
+          el.oxCardRect.classList.add('node-cyan-glow');
+        } else {
+          el.oxCardRect.classList.remove('node-cyan-glow');
+        }
+
+        // Data Bus Line Styles
+        setBusClass(el.pathPromFirehose, 'flow-line', '#a855f7');
+        setBusClass(el.pathGwToProm, 'flow-line', '#a855f7');
+
+        if (stage.mode === 'edge') {
+          setBusClass(el.pathRacksToGw, 'flow-line', '#38bdf8');
+          setBusClass(el.pathBmcToGw, 'flow-line', '#f59e0b');
+          setBusClass(el.pathSlurmToGw, 'flow-line', '#10b981');
+          setBusClass(el.pathGwToSqlite, 'flow-line', '#10b981');
+          setBusClass(el.pathGwToGalera, 'flow-line-dim', '#10b981');
+          setBusClass(el.pathQueryToGalera, 'flow-line-dim', '#f59e0b');
+          setBusClass(el.pathDeltaToSqlite, 'flow-line-dim', '#38bdf8');
+          setBusClass(el.pathDeltaToGalera, 'flow-line-dim', '#38bdf8');
+          setBusClass(el.pathWsrep12, 'flow-line-dim', '#10b981');
+          setBusClass(el.pathWsrep23, 'flow-line-dim', '#10b981');
+          setBusClass(el.pathWsrep31, 'flow-line-dim', '#10b981');
+        } else if (stage.mode === 'contention') {
+          setBusClass(el.pathRacksToGw, 'flow-line-fast', '#f59e0b');
+          setBusClass(el.pathBmcToGw, 'flow-line-fast', '#f43f5e');
+          setBusClass(el.pathSlurmToGw, 'flow-line-fast', '#f59e0b');
+          setBusClass(el.pathGwToSqlite, 'flow-line-fast', '#f43f5e');
+          setBusClass(el.pathGwToGalera, 'flow-line-dim', '#10b981');
+          setBusClass(el.pathQueryToGalera, 'flow-line-dim', '#f59e0b');
+          setBusClass(el.pathDeltaToSqlite, 'flow-line-dim', '#38bdf8');
+          setBusClass(el.pathDeltaToGalera, 'flow-line-dim', '#38bdf8');
+          setBusClass(el.pathWsrep12, 'flow-line-dim', '#10b981');
+          setBusClass(el.pathWsrep23, 'flow-line-dim', '#10b981');
+          setBusClass(el.pathWsrep31, 'flow-line-dim', '#10b981');
+        } else if (stage.mode === 'failover' && failoverMode === 'outage') {
+          setBusClass(el.pathRacksToGw, 'flow-line', '#38bdf8');
+          setBusClass(el.pathBmcToGw, 'flow-line', '#f59e0b');
+          setBusClass(el.pathSlurmToGw, 'flow-line-broken', '#f43f5e');
+          setBusClass(el.pathGwToSqlite, 'flow-line-dim', '#38bdf8');
+          setBusClass(el.pathGwToGalera, 'flow-line-broken', '#f43f5e');
+          setBusClass(el.pathQueryToGalera, 'flow-line-broken', '#f43f5e');
+          setBusClass(el.pathDeltaToSqlite, 'flow-line-fast', '#38bdf8');
+          setBusClass(el.pathDeltaToGalera, 'flow-line-broken', '#f43f5e');
+          setBusClass(el.pathWsrep12, 'flow-line-broken', '#f43f5e');
+          setBusClass(el.pathWsrep23, 'flow-line-broken', '#f43f5e');
+          setBusClass(el.pathWsrep31, 'flow-line-broken', '#f43f5e');
+        } else {
+          setBusClass(el.pathRacksToGw, 'flow-line', '#38bdf8');
+          setBusClass(el.pathBmcToGw, 'flow-line', '#f59e0b');
+          setBusClass(el.pathSlurmToGw, 'flow-line', '#10b981');
+          setBusClass(el.pathGwToSqlite, 'flow-line-dim', '#10b981');
+          setBusClass(el.pathGwToGalera, 'flow-line', '#10b981');
+          setBusClass(el.pathQueryToGalera, stage.mode === 'factory' ? 'flow-line' : 'flow-line-dim', '#f59e0b');
+          setBusClass(el.pathDeltaToSqlite, 'flow-line', '#38bdf8');
+          setBusClass(el.pathDeltaToGalera, 'flow-line', '#38bdf8');
+
+          if (stage.mode === 'failover' && failoverMode === 'single') {
+            setBusClass(el.pathWsrep12, 'flow-line-broken', '#f43f5e');
+            setBusClass(el.pathWsrep23, 'flow-line-broken', '#f43f5e');
+            setBusClass(el.pathWsrep31, 'flow-line-fast', '#f59e0b');
+          } else {
+            setBusClass(el.pathWsrep12, 'flow-line-fast', '#34d399');
+            setBusClass(el.pathWsrep23, 'flow-line-fast', '#34d399');
+            setBusClass(el.pathWsrep31, 'flow-line-fast', '#34d399');
+          }
+        }
+
+        // Rebuild moving orbs
+        buildPacketsForStage(stage);
+
+        // Update Sidebar KPIs & Bars
+        el.sideStagePill.textContent = stage.sidePill;
+        el.sideStagePill.className = `text-[9.5px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${stage.pillClass}`;
+        el.sidePlatformTag.textContent = plat.tag;
+        el.sideStageHeading.textContent = stage.heading;
+        el.sideStageDesc.textContent = stage.desc;
+
+        el.kpiRacks.textContent = stage.racks.toLocaleString();
+        el.kpiTrays.textContent = trays.toLocaleString();
+        el.kpiGpus.textContent = gpus.toLocaleString();
+        el.kpiBmcs.textContent = bmcs.toLocaleString();
+        el.kpiDb.textContent = effPrimaryDb;
+        el.kpiDb.className = `text-[11px] xl:text-xs font-mono font-extrabold mt-0.5 truncate ${
+          stage.mode === 'contention' ? 'text-rose-400' : (stage.mode === 'failover' && failoverMode === 'outage') ? 'text-sky-300' : 'text-emerald-400'
+        }`;
+        el.kpiStorage.textContent = stage.storage;
+
+        el.barSqliteLabel.textContent = effSqliteStatus;
+        el.barSqliteLabel.style.color = effSqliteColor;
+        el.barSqliteFill.style.width = `${effSqlitePct}%`;
+        el.barSqliteFill.style.backgroundColor = effSqliteColor;
+
+        el.barGaleraLabel.textContent = effGaleraStatus;
+        el.barGaleraLabel.className = `font-bold ${
+          (stage.mode === 'failover' && failoverMode === 'outage')
+            ? 'text-rose-400'
+            : (stage.mode === 'failover' && failoverMode === 'single')
+              ? 'text-amber-300'
+              : effGaleraActive
+                ? 'text-emerald-400'
+                : 'text-slate-500'
+        }`;
+        el.barGaleraFill.style.width = `${effGaleraPct}%`;
+        el.barGaleraFill.style.backgroundColor =
+          (stage.mode === 'failover' && failoverMode === 'single') ? '#f59e0b' : '#10b981';
+
+        el.barPromLabel.textContent = `${promSamplesSec} samples/s`;
+        el.barPromFill.style.width = `${stage.promBarPct}%`;
+
+        // Update Terminal Readout
+        renderTerminalLogs(effLogs);
+
+        // Auto-switch right panel tab on L6 (180-Day Query) vs L1-L5 (Terminal)
+        if (stage.mode === 'factory') {
+          setActiveTab('query');
+          runHistoryQuery(false);
+        } else {
+          setActiveTab('terminal');
+        }
+      }
+
+      /* ---------------------------------------------------------------------
+         10. PLAYBACK LOOP & INTERACTION WIRING
+      --------------------------------------------------------------------- */
+      function goToStage(index) {
+        currentStage = (index + STAGES.length) % STAGES.length;
+        stageElapsedMs = 0;
+        if (STAGES[currentStage].mode === 'failover' && failoverMode === 'recovering') {
+          failoverMode = 'single';
+        }
+        renderAll();
+      }
+
+      function togglePlayPause() {
+        isPlaying = !isPlaying;
+        if (isPlaying) {
+          el.playPauseIcon.textContent = '❚❚';
+          el.playPauseText.textContent = 'PAUSE';
+          el.btnPlayPause.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 transition-all cursor-pointer';
+          el.liveStageChip.textContent = 'AUTO-CYCLE • 7.0s';
+        } else {
+          el.playPauseIcon.textContent = '▶';
+          el.playPauseText.textContent = 'PLAY';
+          el.btnPlayPause.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/40 transition-all cursor-pointer';
+          el.liveStageChip.textContent = 'PAUSED • MANUAL';
+        }
+      }
+
+      function animationTick(now) {
+        const dt = Math.min(50, now - lastFrameTs);
+        lastFrameTs = now;
+        const dtSec = dt / 1000;
+
+        // Advance continuous bus orbs
+        for (let i = 0; i < activePackets.length; i++) {
+          const p = activePackets[i];
+          p.t = (p.t + p.speed * dtSec) % 1;
+          const pt = p.path.getPointAtLength(p.t * p.totalLen);
+          p.el.setAttribute('cx', pt.x.toFixed(1));
+          p.el.setAttribute('cy', pt.y.toFixed(1));
+        }
+
+        // Advance one-shot 180-Day SQL query pulses
+        for (let i = queryPulses.length - 1; i >= 0; i--) {
+          const qp = queryPulses[i];
+          qp.t += qp.speed * dtSec;
+          if (qp.t >= 1) {
+            if (qp.el.parentNode) qp.el.parentNode.removeChild(qp.el);
+            queryPulses.splice(i, 1);
+            continue;
+          }
+          if (qp.t < 0) {
+            qp.el.setAttribute('opacity', '0');
+            continue;
+          }
+          qp.el.setAttribute('opacity', '1');
+          const dist = qp.reverse ? (1 - qp.t) * qp.totalLen : qp.t * qp.totalLen;
+          const pt = qp.path.getPointAtLength(dist);
+          qp.el.setAttribute('cx', pt.x.toFixed(1));
+          qp.el.setAttribute('cy', pt.y.toFixed(1));
+        }
+
+        // Auto-advance 6-stage cycle
+        if (isPlaying) {
+          stageElapsedMs += dt;
+          const pct = Math.min(100, (stageElapsedMs / STAGE_DURATION_MS) * 100);
+          el.cycleProgressBar.style.width = `${pct.toFixed(1)}%`;
+          const remaining = Math.max(0, (STAGE_DURATION_MS - stageElapsedMs) / 1000);
+          el.timerLabel.textContent = `${remaining.toFixed(1)}s`;
+
+          if (stageElapsedMs >= STAGE_DURATION_MS) {
+            goToStage(currentStage + 1);
+          }
+        }
+
+        requestAnimationFrame(animationTick);
+      }
+
+      // Event Listeners
+      el.btnPlayPause.addEventListener('click', togglePlayPause);
+      el.btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+      el.btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+
+      el.layerButtons.forEach((btn) => {
+        btn.addEventListener('click', () => goToStage(Number(btn.dataset.layer)));
+      });
+
+      el.platformButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          currentPlatform = btn.dataset.platform;
+          renderAll();
+        });
+      });
+
+      el.btnFailoverSingle.addEventListener('click', () => {
+        failoverMode = 'single';
+        if (isPlaying) togglePlayPause();
+        renderAll();
+      });
+
+      el.btnFailoverOutage.addEventListener('click', () => {
+        failoverMode = 'outage';
+        if (isPlaying) togglePlayPause();
+        renderAll();
+      });
+
+      el.btnSimulateRecovery.addEventListener('click', () => {
+        failoverMode = 'recovering';
+        renderAll();
+      });
+
+      el.tabTerminalBtn.addEventListener('click', () => setActiveTab('terminal'));
+      el.tabQueryBtn.addEventListener('click', () => {
+        setActiveTab('query');
+        runHistoryQuery(false);
+      });
+
+      el.btnRunQuery.addEventListener('click', () => {
+        if (isPlaying) togglePlayPause();
+        runHistoryQuery(true);
+      });
+      el.queryRackSelect.addEventListener('change', () => runHistoryQuery(true));
+      el.queryWindowSelect.addEventListener('change', () => runHistoryQuery(true));
+
+      // Keyboard Shortcuts
+      window.addEventListener('keydown', (e) => {
+        if (e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT')) return;
+        if (e.code === 'Space') {
+          e.preventDefault();
+          togglePlayPause();
+        } else if (e.code === 'ArrowRight') {
+          goToStage(currentStage + 1);
+        } else if (e.code === 'ArrowLeft') {
+          goToStage(currentStage - 1);
+        } else if (e.key >= '1' && e.key <= '6') {
+          goToStage(Number(e.key) - 1);
+        }
+      });
+
+      window.onload = function () {
+        renderAll();
+        runHistoryQuery(false);
+        lastFrameTs = performance.now();
+        requestAnimationFrame(animationTick);
+      };
+    })();
+  </script>
+</body>
+</html>
