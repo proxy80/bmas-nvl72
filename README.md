@@ -2,7 +2,9 @@
 
 **Bare-Metal HPC & AI Orchestration — Engineered Without the Bloat.**
 
-> **Interactive Architecture Diagram:** [Launch Live L0–L3 Animated Architecture (1440p)](https://proxy80.github.io/bmas-nvl72/)
+> **Interactive Architecture Diagrams (1440p Live Simulators):**
+> - **L0–L3 Telemetry & Co-Pilot Stack:** [Launch Live L0–L3 Animated Architecture](https://proxy80.github.io/bmas-nvl72/)
+> - **Database Capacity, Galera Failover & 180-Day Query (ACME Rocket Company Case Study):** [Launch Interactive Capacity & Failover Simulator](https://proxy80.github.io/bmas-nvl72/acme-capacity-architecture.html)
 
 The **BMAS NVL72 Command Plane** is a unified, voice-activated bare-metal management frontend engineered for **NVIDIA GB200 NVL72 racks** and large-scale HPC clusters. It delivers deterministic job scheduling, direct exporter telemetry (zero Grafana overhead), enterprise zero-trust security, and an embedded, air-gapped AI co-pilot across every infrastructure layer.
 
@@ -19,8 +21,14 @@ The **BMAS NVL72 Command Plane** is a unified, voice-activated bare-metal manage
 
 ## Scaling & High Availability
 
-* **Rapid Lab / Air-Gapped Bring-Up:** Ships with a local **SQLite** backend for instant deployment and testing.
-* **Enterprise High Availability (10,000+ Nodes):** Scales seamlessly when backed by an external **MariaDB Galera Cluster**.
+> **Live Interactive Walkthrough:** [Launch the ACME Rocket Company Database Capacity, Galera Failover & 180-Day Query Simulator (1440p)](https://proxy80.github.io/bmas-nvl72/acme-capacity-architecture.html)
+
+This 6-stage interactive architecture simulator demonstrates how a single compiled binary scales from a single-row lab to a 150-rack AI factory across **GB200 NVL72**, **GB300 NVL72**, and **H100 / B200 Pods**:
+
+- **Edge Standalone (1–8 Racks — Local SQLite):** Zero-config bring-up using built-in **SQLite** with automatic 180-day retention purge and no external DBA required.
+- **Enterprise HA Cutover (10–150+ Racks — 3-Node MariaDB Galera):** Shows why single-writer SQLite hits lock contention (`SQLITE_BUSY`) at 46+ racks (828+ OOB Redfish BMCs + Slurm REST), and how exporting `BMAS_DB_URL` transitions cleanly to a synchronous **3-Node MariaDB Galera Cluster** with automatic schema creation.
+- **Zero Split-Brain 3-Bus Separation:** Decouples 180-day relational job history (Galera), 2-second live GPU telemetry (Prometheus/DCGM TSDB—zero SQL overhead), and the `core/db_sync.py` hardware safety net (`TRAY_COLS` mirrored to local SQLite).
+- **Interactive Galera Failover & 180-Day Query Drill:** Lets you simulate both a **single-node failure** (2/3 quorum, zero downtime) and a **full 0/3 Galera outage** (live 2s Prometheus + local SQLite BMC fallback + delta resync on recovery), plus fire live **180-day `slurm_job_history` queries** with Ox Mini AI summaries.
 
 ---
 
