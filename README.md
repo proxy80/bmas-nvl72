@@ -89,3 +89,23 @@ This 6-stage interactive architecture simulator demonstrates how a single compil
 * For enterprise licensing, bare-metal HPC consulting, or C2C/B2B deployment engagements, visit **[Bare Metal Applied Science LLC](https://baremetalappliedscience.com/)**.
 
 © 2026 Bare Metal Applied Science LLC. All rights reserved.
+
+---
+
+## Licensing & Enterprise Pricing
+
+BMAS NVL72 Command Plane is licensed **flat-rate per cluster**—with **zero per-GPU, per-core, or per-node metering** and **100% offline Ed25519 cryptographic activation**. There is no phone-home telemetry, no cloud dependency, and no surprise scaling tax as you expand your hardware footprint.
+
+| Tier | Licensing | Annual Renewal | Deployment Scope |
+| :--- | :--- | :--- | :--- |
+| **EVAL** | **$0** (30 Days) | — | Full L0–L3 evaluation for lab and pre-production validation |
+| **ENTERPRISE** | **$34,999.99** (Year 1) | **$5,000 / year** | Production NVL72 & HPC clusters (1–8 racks, SQLite or Galera HA, offline Ed25519 key) |
+| **SOVEREIGN** | **$75,000.00** *(Custom)* | Custom SLA | Multi-rack scale-out (10–150+ racks, 3-Node MariaDB Galera HA, dedicated B2B onboarding) |
+
+### Why Flat-Rate Sovereign Licensing
+- **Predictable CapEx & OpEx:** One flat license covers your entire control plane—whether you are orchestrating a single rack or scaling out across high-density liquid-cooled nodes.
+- **Zero Metering:** No per-GPU fees, no CPU core counting, and no seat-based restrictions.
+- **Air-Gap Native:** Offline Ed25519 license keys validate locally in microseconds with zero external network calls.
+- **Complete L0–L3 Stack Included:** Native Redfish/Prometheus telemetry, Slurm 24.11+ REST orchestration, mTLS/RBAC security, 180-day job auditing, and the embedded AI Co-Pilot are included out of the box.
+
+**Enterprise Procurement:** B2B Purchase Order, Wire, or ACH via **Bare Metal Applied Science LLC**.
