@@ -83,15 +83,6 @@ This 6-stage interactive architecture simulator demonstrates how a single compil
 
 ---
 
-## Licensing & Support
-
-* Includes a **30-day evaluation trial**.
-* For enterprise licensing, bare-metal HPC consulting, or C2C/B2B deployment engagements, visit **[Bare Metal Applied Science LLC](https://baremetalappliedscience.com/)**.
-
-© 2026 Bare Metal Applied Science LLC. All rights reserved.
-
----
-
 ## Licensing & Enterprise Pricing
 
 BMAS NVL72 Command Plane is licensed **flat-rate per cluster**—with **zero per-GPU, per-core, or per-node metering** and **100% offline Ed25519 cryptographic activation**. There is no phone-home telemetry, no cloud dependency, and no surprise scaling tax as you expand your hardware footprint.
@@ -109,3 +100,7 @@ BMAS NVL72 Command Plane is licensed **flat-rate per cluster**—with **zero per
 - **Complete L0–L3 Stack Included:** Native Redfish/Prometheus telemetry, Slurm 24.11+ REST orchestration, mTLS/RBAC security, 180-day job auditing, and the embedded AI Co-Pilot are included out of the box.
 
 **Enterprise Procurement:** B2B Purchase Order, Wire, or ACH via **Bare Metal Applied Science LLC**.
+
+For enterprise licensing, bare-metal HPC consulting, or C2C/B2B deployment engagements, visit [Bare Metal Applied Science LLC](https://baremetalappliedscience.com/).
+
+© 2026 Bare Metal Applied Science LLC. All rights reserved.
